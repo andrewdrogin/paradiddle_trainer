@@ -202,6 +202,7 @@ export function loadProgress() {
   let p = null;
   try { p = JSON.parse(localStorage.getItem(PROGRESS_KEY)); } catch {}
   p ??= { current: 0, session: 0, steps: {} };
+  p.days ??= [];   // dates played, for "days in a row"
   for (const s of STEPS) p.steps[s.id] ??= freshStep(s);
   return p;
 }

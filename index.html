@@ -3,85 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111418">
-  <title>Ехо-тренажер</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#f7f0e1">
+  <title>Парадідл</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Manrope:wght@500;700;800&display=swap">
+  <link rel="stylesheet" href="trainer.css">
 </head>
-<body class="trainer">
+<body data-screen="home">
   <div id="beatFrame"></div>
-  <header class="topbar">
-    <button id="goBtn" class="big primary">▶ Почати</button>
-    <nav id="stages" class="stages">
-      <span data-stage="warmup">Розминка</span>
-      <span data-stage="review">Повторення</span>
-      <span data-stage="new">Нове</span>
-      <span data-stage="finish">Фініш</span>
-    </nav>
-    <span class="muted version">v0.2</span>
-  </header>
 
-  <main class="trainer-main">
-    <section class="card stage-card">
-      <div class="phrase-head">
-        <div>
-          <div id="phraseTitle" class="phrase-title">Натисни «Почати»</div>
-          <div id="phraseSub" class="muted small"></div>
-        </div>
-        <div class="head-right">
-          <div id="streak" class="streak"></div>
-          <div id="micLabel" class="muted small"></div>
-        </div>
+  <!-- today: the lesson and one big button -->
+  <section id="home" class="screen">
+    <div class="home-top">
+      <h1 class="logo">ПАРАДІДЛ</h1>
+      <div id="homeDays" class="chip"></div>
+    </div>
+    <div class="home-main">
+      <div id="corgiHome" class="corgi-box"></div>
+      <div class="home-card">
+        <div class="slant ink">Сьогодні</div>
+        <div id="homeLesson" class="home-lesson"></div>
+        <div id="homeMeta" class="home-meta"></div>
+        <button id="goBtn" class="cta">Почати · <span id="homeLength">10 хв</span></button>
       </div>
+    </div>
+  </section>
 
-      <div id="gridLabel" class="grid-label"></div>
-      <div id="grid" class="grid"></div>
-
-      <div id="plate" class="result rec"></div>
-
-      <div class="row">
-        <button id="againBtn" class="big" disabled>↻ Послухати ще раз</button>
-        <button id="nextBtn" class="big primary" hidden>Далі ▶</button>
-        <button id="replayBtn" class="big" disabled>▶ Як я зіграв</button>
-        <button id="skipBtn" class="big" disabled>Пропустити</button>
+  <!-- play: the phrase, the partner, the state -->
+  <section id="play" class="screen">
+    <div class="play-top">
+      <button id="pauseBtn" class="icon-btn" aria-label="Пауза">❚❚</button>
+      <div id="phraseTitle" class="slant ink title"></div>
+      <div id="bpmPlate" class="slant red bpm"></div>
+      <nav id="stages" class="stages">
+        <span data-stage="warmup">Розминка</span><span data-stage="review">Повторення</span><span data-stage="new">Нове</span><span data-stage="finish">Фініш</span>
+      </nav>
+      <div id="streak" class="combo"></div>
+    </div>
+    <div class="play-main">
+      <div id="corgiPlay" class="corgi-box"></div>
+      <div class="phrase-box">
+        <div id="phraseSub" class="sub"></div>
+        <div id="gridLabel" class="grid-label"></div>
+        <div id="grid" class="grid"></div>
       </div>
-    </section>
+    </div>
+    <div class="play-bottom">
+      <div id="plate" class="plate"></div>
+      <div class="actions">
+        <button id="nextBtn" class="cta small" hidden>Далі ▶</button>
+        <button id="againBtn" class="ghost" disabled>↻ Ще раз послухати</button>
+        <button id="replayBtn" class="ghost" disabled>▶ Як я зіграв</button>
+        <button id="skipBtn" class="ghost" disabled>Пропустити</button>
+      </div>
+    </div>
+  </section>
 
-    <section class="card">
-      <details id="mapBox">
-        <summary id="mapSummary">Мій шлях</summary>
-        <div id="map" class="map"></div>
-      </details>
-    </section>
+  <!-- the way: lessons by level -->
+  <section id="path" class="screen page">
+    <h2 class="slant ink">Мій шлях</h2>
+    <p id="mapSummary" class="lead"></p>
+    <div id="map" class="map"></div>
+  </section>
 
-    <section class="card">
-      <details id="settingsBox">
-        <summary>Налаштування</summary>
-        <div class="settings">
-          <label class="inline">Звук
-            <select id="kitSelect"><option value="pad">Мій пад</option><option value="snare">Малий барабан</option></select>
-          </label>
-          <label class="inline">Заняття
-            <select id="lengthSelect"></select>
-          </label>
-          <label class="inline">Оцінка
-            <select id="strictSelect"></select>
-          </label>
-          <label class="slider">
-            <span>Чутливість мікрофона: <b id="sensVal"></b></span>
-            <input id="sens" type="range" min="0" max="30" step="1">
-            <span class="muted small">Удари губляться — праворуч. Ловить зайве (кімнату, хвіст пада) — ліворуч.</span>
-          </label>
-          <label class="slider">
-            <span>Метроном: <b id="metroVal"></b></span>
-            <input id="metro" type="range" min="0" max="100" step="5">
-          </label>
-          <label class="inline check"><input id="leftTopCheck" type="checkbox"> Ліва рука зверху</label>
-          <label class="inline check"><input id="blinkCheck" type="checkbox"> Мигалка: рамка екрана блимає на кожну долю</label>
-          <p class="muted small">Мікрофон, чутливість, записи пада і калібрування затримки — на <a href="test.html">сторінці тесту</a>.</p>
-        </div>
-      </details>
-    </section>
-  </main>
+  <!-- settings -->
+  <section id="settings" class="screen page">
+    <h2 class="slant ink">Налаштування</h2>
+    <div class="settings">
+      <label class="field">Заняття <select id="lengthSelect"></select></label>
+      <label class="field">Звук партнера
+        <select id="kitSelect"><option value="pad">Мій пад</option><option value="snare">Малий барабан</option></select>
+      </label>
+      <label class="field">Оцінка <select id="strictSelect"></select></label>
+      <label class="field slider">
+        <span>Чутливість мікрофона: <b id="sensVal"></b></span>
+        <input id="sens" type="range" min="0" max="30" step="1">
+        <small>Удари губляться — праворуч. Ловить зайве (кімнату, хвіст пада) — ліворуч.</small>
+      </label>
+      <label class="field slider">
+        <span>Метроном: <b id="metroVal"></b></span>
+        <input id="metro" type="range" min="0" max="100" step="5">
+      </label>
+      <label class="check"><input id="blinkCheck" type="checkbox"> Екран пульсує в такт</label>
+      <label class="check"><input id="leftTopCheck" type="checkbox"> Ліва рука зверху</label>
+      <p class="hint">Мікрофон: <span id="micLabel">—</span>. Записи пада, калібрування й детектор — на <a href="test.html">сторінці тесту</a>.</p>
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <button data-go="home" class="on">Сьогодні</button>
+    <button data-go="path">Мій шлях</button>
+    <button data-go="settings">Налаштування</button>
+  </nav>
 
   <script type="module" src="trainer.js"></script>
 </body>

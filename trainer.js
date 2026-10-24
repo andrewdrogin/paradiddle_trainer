@@ -5,6 +5,7 @@
 // pulses on the beats and every hit pops right away, brighter the closer it is to the beat.
 
 import * as E from './engine.js';
+import { createCorgi } from './corgi.js';
 import {
   STEPS, LEVELS, WARMUP, STRICTNESS, TEMPOS, notesOf, stepPhrase, canMirror, noteGap, grade, handBalance,
   loadProgress, saveProgress, recordAttempt, reviewSteps,
@@ -98,7 +99,7 @@ function troubleSpot(r) {
 // ---------- UI pieces ----------
 
 function setPlate(state, title, sub = '') {
-  $('plate').className = 'result rec' + (state ? ' rec-' + state : '');
+  $('plate').className = 'plate' + (state ? ' p-' + state : '');
   $('plate').innerHTML = `<b>${title}</b>` + (sub ? `<span class="small">${sub}</span>` : '');
 }
 
@@ -205,31 +206,32 @@ function explain(r) {
 const lessonNo = i => `Урок ${i + 1}`;
 
 function showHeader(pickInfo) {
-  const names = { warmup: 'Розминка', review: 'Повторення', new: 'Нове', finish: 'Фініш' };
-  let title = `${names[stage]}: ${base.title}`;
-  if (pickInfo?.step !== undefined) title = `${names[stage]} · ${lessonNo(pickInfo.step)}: ${base.title}`;
+  let title = base.title;
+  if (pickInfo?.step !== undefined) title = `${lessonNo(pickInfo.step)} · ${base.title}`;
   $('phraseTitle').textContent = title + (help.mode === 'part' ? ' — шматок' : '');
+  $('bpmPlate').textContent = `${phrase.bpm} BPM`;
   if (help.mode === 'slow') {
-    $('phraseSub').textContent = `${phrase.bpm} BPM, повільніше · потім у темпі ${base.bpm}`;
+    $('phraseSub').textContent = `Повільніше · потім у темпі ${base.bpm}`;
     return;
   }
   if (help.mode === 'part') {
-    $('phraseSub').textContent = `Розбираємо шматок · ${phrase.bpm} BPM · потім уся фраза`;
+    $('phraseSub').textContent = 'Розбираємо шматок · потім уся фраза';
     return;
   }
-  let sub = `${phrase.bpm} BPM`;
-  if (stage === 'warmup') sub += ` · фраза ${warmIdx + 1} з ${plan().warmup.length}`;
+  const subs = [];
+  if (stage === 'warmup') subs.push(`Розминка · фраза ${warmIdx + 1} з ${plan().warmup.length}`);
   if (stage === 'new') {
-    sub += ` · фраза ${newState.accepted + 1} з ${newState.goal}`;
+    let sub = `Фраза ${newState.accepted + 1} з ${newState.goal}`;
     if (pickInfo?.kind === 'lesson') {
       const st = progress.steps[STEPS[progress.current].id];
       sub += ` · до наступного кроку ${st.hist.filter(Boolean).length} з ${st.len === 'short' ? 2 : 3}`;
     }
     if (pickInfo?.kind === 'insert') sub += ' · знайоме, для перепочинку';
+    subs.push(sub);
   }
-  if (stage === 'review') sub += ` · ще ${reviewQueue.length} ${reviewQueue.length === 1 ? 'вправа' : 'вправи'}`;
-  if (stage === 'finish') sub += ' · легка фраза наостанок';
-  $('phraseSub').textContent = sub;
+  if (stage === 'review') subs.push(`Повторення · ще ${reviewQueue.length} ${reviewQueue.length === 1 ? 'вправа' : 'вправи'}`);
+  if (stage === 'finish') subs.push('Легка фраза наостанок');
+  $('phraseSub').textContent = subs.join('');
 }
 
 // ---------- lessons map ----------
@@ -253,7 +255,7 @@ function renderMap() {
     });
   });
   $('map').innerHTML = out.join('');
-  $('mapSummary').textContent = `Мій шлях · ${lessonNo(progress.current)} з ${STEPS.length}: ${STEPS[progress.current].title}`;
+  $('mapSummary').textContent = `Ти зараз: ${lessonNo(progress.current)} з ${STEPS.length}, ${STEPS[progress.current].title}`;
 }
 
 // ---------- beat pulse ----------
@@ -286,6 +288,7 @@ export function pulseKind(k, strokes) {
         frame.className = '';
         void frame.offsetWidth;
         frame.className = 'pulse ' + kind;
+        if (kind !== 'half' && phase !== 'listen') corgi.beat(kind === 'strong');
         const c = countEl(k % 8);
         if (c && phase !== 'result' && phase !== 'hold') {
           $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
@@ -311,6 +314,7 @@ function startCheck() {
   }
   setStage('check');
   $('phraseTitle').textContent = 'Перевірка звуку';
+  $('bpmPlate').textContent = '15 с';
   $('phraseSub').textContent = '15 секунд, раз на день, щоб мікрофон чув тебе правильно';
   $('grid').innerHTML = '';
   $('gridLabel').textContent = '';
@@ -483,6 +487,7 @@ function nextPhrase() {
 function listen() {
   clearTimers();
   phase = 'listen';
+  corgi.mood('');
   clearMarks();
   setPlate('listen', 'Слухай…');
   $('againBtn').disabled = true;
@@ -495,7 +500,7 @@ function listen() {
     const t = t0 + i * gap;
     E.playNote(kit, nt.accent, t);
     if (i % 2 === 0) E.click(t, prefs.metro / 100, i === 0);
-    later(() => flash(i, 'now'), msUntil(t));
+    later(() => { flash(i, 'now'); corgi.hit(nt.hand, nt.accent); }, msUntil(t));
   });
   later(waitTurn, msUntil(t0 + phrase.notes.length * gap));
 }
@@ -561,6 +566,7 @@ function finish() {
   const r = grade(phrase, hits, stage === 'warmup' || stage === 'finish' ? 'soft' : prefs.strict);
   showResult(r);
   const { msg, accepted, summary } = stepHelp(r);
+  corgi.mood(accepted || summary ? 'happy' : 'cheer');
   showStreak();
   renderMap();
   if (summary) return;
@@ -695,12 +701,14 @@ function showSummary() {
   ];
   const bal = handBalance(warmTakes);
   if (bal) lines.push(`Ліва ≈ ${bal}% від правої за силою удару`);
-  $('phraseTitle').textContent = 'Заняття завершено 🎉';
+  $('phraseTitle').textContent = 'Заняття завершено';
+  $('bpmPlate').textContent = `${mins} хв`;
   $('phraseSub').textContent = 'Добра робота. Коротко, але щодня — найкраще.';
+  corgi.mood('happy');
   $('grid').innerHTML = '';
   $('gridLabel').textContent = '';
   setPlate('done', 'Підсумок', lines.join('<br>') +
-    '<span class="row"><button id="moreBtn" class="big">Ще трохи</button><button id="endBtn" class="big primary">Завершити</button></span>');
+    '<span class="row"><button id="endBtn" class="cta">Завершити</button><button id="moreBtn" class="cta">Ще трохи</button></span>');
   $('moreBtn').onclick = () => {
     setStage('new');
     newState.goal = newState.accepted + Math.ceil(plan().goal / 2);
@@ -708,14 +716,7 @@ function showSummary() {
     newState.pick = null;
     nextPhrase();
   };
-  $('endBtn').onclick = () => {
-    E.stopMic();
-    stopBeat();
-    running = false;
-    sessionStarted = false;
-    $('goBtn').textContent = '▶ Почати';
-    setPlate('', 'До завтра 👋', 'Натисни «Почати», щоб почати нове заняття.');
-  };
+  $('endBtn').onclick = leaveSession;
   $('againBtn').disabled = true;
   $('replayBtn').disabled = true;
   $('nextBtn').hidden = true;
@@ -795,10 +796,12 @@ async function start() {
   $('micLabel').textContent = DEMO ? 'демо: віртуальний барабанщик' : await E.startMic(onHit);
   await loadKit();
   running = true;
-  $('goBtn').textContent = '⏸ Пауза';
+  showScreen('play');
+  $('pauseBtn').textContent = '❚❚';
   if (!sessionStarted) {
     sessionStarted = true;
     progress.session++;
+    if (!progress.days.includes(today())) progress.days = [...progress.days, today()].slice(-60);
     saveProgress(progress);
     streak = 0;
     stats = { accepted: 0, best: 0, startMs: Date.now(), startStep: progress.current, startTempo: progress.steps[STEPS[progress.current].id].t };
@@ -816,24 +819,44 @@ function pause() {
   E.stopMic();
   running = false;
   phase = 'idle';
-  $('goBtn').textContent = '▶ Продовжити';
+  $('pauseBtn').textContent = '▶';
   $('againBtn').disabled = true;
   $('nextBtn').hidden = true;
-  setPlate('', 'Пауза', 'Продовжимо з тієї ж фрази.');
+  setPlate('', 'Пауза', 'Продовжимо з тієї ж фрази.' +
+    '<span class="row"><button id="resumeBtn" class="cta">▶ Продовжити</button><button id="leaveBtn" class="cta">На головну</button></span>');
+  $('resumeBtn').onclick = resume;
+  $('leaveBtn').onclick = leaveSession;
 }
 
-$('goBtn').onclick = async () => {
-  if (running) { pause(); return; }
-  $('goBtn').disabled = true;
+async function resume() {
   try {
     await start();
   } catch (e) {
     pause();
     setPlate('warn', 'Не вдалося увімкнути мікрофон', e.message || e.name);
-  } finally {
-    $('goBtn').disabled = false;
   }
+}
+
+// back to "today": the session ends here, the next start is a new one
+function leaveSession() {
+  clearTimers();
+  stopBeat();
+  E.stopMic();
+  running = false;
+  sessionStarted = false;
+  phase = 'idle';
+  stage = null;
+  document.body.classList.remove('fever');
+  renderHome();
+  showScreen('home');
+}
+
+$('goBtn').onclick = async () => {
+  $('goBtn').disabled = true;
+  await resume();
+  $('goBtn').disabled = false;
 };
+$('pauseBtn').onclick = () => (running ? pause() : resume());
 
 $('againBtn').onclick = () => { if (phase === 'wait') listen(); };
 $('nextBtn').onclick = goOn;
@@ -903,6 +926,36 @@ $('blinkCheck').onchange = () => { prefs.blink = $('blinkCheck').checked; savePr
 $('leftTopCheck').checked = prefs.leftTop;
 $('leftTopCheck').onchange = () => { prefs.leftTop = $('leftTopCheck').checked; savePrefs(); if (phrase) { renderGrid(); } };
 
+// ---------- screens ----------
+
+function showScreen(name) {
+  document.body.dataset.screen = name;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+  if (name === 'path') renderMap();
+}
+document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => showScreen(b.dataset.go); });
+
+// days in a row up to today (or yesterday, if today isn't played yet)
+function dayStreak() {
+  const set = new Set(progress.days);
+  const d = new Date();
+  if (!set.has(d.toDateString())) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (set.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+function renderHome() {
+  const step = STEPS[progress.current], st = progress.steps[step.id];
+  $('homeLesson').textContent = `${lessonNo(progress.current)} · ${step.title}`;
+  $('homeMeta').textContent = `${TEMPOS[st.t]} BPM · розминка, повторення, нове і фініш`;
+  $('homeLength').textContent = prefs.length === 'full' ? '20 хв' : '10 хв';
+  const days = dayStreak();
+  $('homeDays').textContent = days >= 2 ? `🔥 ${days} дні поспіль` : days === 1 ? 'Вчора грав 👍' : '';
+}
+
+const corgi = createCorgi($('corgiPlay'));
+createCorgi($('corgiHome'));
+lengthSel.addEventListener('change', renderHome);
 renderMap();
-setPlate('', 'Одягни навушники і натисни «Почати»',
-  `${LENGTHS[prefs.length].label.replace(/ \(.*/, ' заняття')}: розминка, повторення, ${lessonNo(progress.current).toLowerCase()} «${STEPS[progress.current].title}» (${TEMPOS[progress.steps[STEPS[progress.current].id].t]} BPM) і фініш.`);
+renderHome();
