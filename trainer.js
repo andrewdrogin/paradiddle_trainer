@@ -17,7 +17,7 @@ const DEMO_STRUGGLE = new URLSearchParams(location.search).get('demo') === 'stru
 let demoLearned = false;
 
 const PREFS_KEY = 'pt.trainer';
-const prefs = { strict: 'soft', metro: 30, blink: true, replay: false, leftTop: false };
+const prefs = { strict: 'soft', metro: 30, blink: true, leftTop: false };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch {}
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} };
 
@@ -43,6 +43,8 @@ let base = null;            // the phrase as the course wants it: { title, notes
 let phrase = null;          // what is played now: base, or base slower, or its trouble spot
 let phase = 'idle';         // idle | check | listen | wait | play | result
 let hits = [];
+let lastTake = null;        // { hits, key } of the last finished attempt, for "how you played"
+const phraseKey = () => `${help.key}|${help.mode}`;
 
 let timers = [];
 const later = (fn, ms) => timers.push(setTimeout(fn, Math.max(0, ms)));
@@ -307,6 +309,8 @@ function checkDone(step) {
   if (acc !== null && acc > -4) notes.push('акценти на межі перевантаження: зменш Gain');
   if (check.soft !== null && acc !== null) {
     const diff = Math.round(acc - check.soft);
+    E.settings.accentGapDb = diff;   // the player's own soft→accent gap, used by "how you played"
+    E.saveSettings();
     notes.push(`різниця тихий/акцент ${diff} дБ, ${diff >= 8 ? 'чути чітко' : 'можна сильніше розводити'}`);
   }
   check = null;
@@ -367,6 +371,7 @@ function listen() {
   clearMarks();
   setPlate('listen', 'Слухай…');
   $('againBtn').disabled = true;
+  $('replayBtn').disabled = true;
   const gap = noteGap(phrase.bpm);
   const t0 = E.ctx.currentTime + LISTEN_LEAD;
   startBeat(t0, gap, phrase.notes.length);
@@ -385,6 +390,8 @@ function waitTurn() {
   hits = [];
   setPlate('go', 'Твоя черга', 'Вступай на будь-який спалах рамки. Я почекаю.');
   $('againBtn').disabled = false;
+  // the previous take can still be heard while waiting, if it was this same phrase
+  $('replayBtn').disabled = lastTake?.key !== phraseKey();
   if (DEMO) simulatePlayer();
 }
 
@@ -435,9 +442,9 @@ function finish() {
   const msg = stepHelp(r);
   showStreak();
 
-  let wait = NEXT_PAUSE + (msg ? 1200 : 0);
-  if (prefs.replay && hits.length) wait += replay(hits) * 1000;
-  later(nextPhrase, wait);
+  lastTake = hits.length ? { hits, key: phraseKey() } : null;
+  $('replayBtn').disabled = !lastTake;
+  later(nextPhrase, NEXT_PAUSE + (msg ? 1200 : 0));
 }
 
 // move along the help ladder; only a clean phrase in tempo counts for the course -> course message
@@ -504,24 +511,44 @@ function stepHelp(r) {
   return msg;
 }
 
-// "how you played": the take re-sounded with the kit, keeping its timing and dynamics -> seconds
+// "How you played", on demand: the last take re-sounded with the kit, keeping its timing and
+// dynamics. A stroke counts as an accent only when it rises above the take's typical stroke by at
+// least half of the player's own soft→accent gap (from the sound check), so even playing sounds even.
+const DEFAULT_ACCENT_GAP_DB = 16;
+
 function replay(take) {
-  const dbs = take.map(h => h.db);
-  const hi = Math.max(...dbs), lo = Math.min(...dbs);
-  const split = hi - lo >= 4 ? (hi + lo) / 2 : Infinity;   // two loudness groups or one
   const med = a => [...a].sort((x, y) => x - y)[a.length >> 1];
-  const ref = { true: med(dbs.filter(d => d >= split)), false: med(dbs.filter(d => d < split)) };
-  const t0 = E.ctx.currentTime + 0.9;   // after the result has been seen
+  const typical = med(take.map(h => h.db));
+  const rise = Math.max(4, (E.settings.accentGapDb ?? DEFAULT_ACCENT_GAP_DB) / 2);
+  const isAccent = h => h.db >= typical + rise;
+  const accents = take.filter(isAccent).map(h => h.db);
+  const ref = { true: accents.length ? med(accents) : 0, false: typical };
+  const t0 = E.ctx.currentTime + 0.25;
   take.forEach((h, i) => {
-    const accent = h.db >= split;
-    const level = Math.min(1.6, Math.max(0.5, 10 ** ((h.db - ref[accent]) / 20)));
+    const accent = isAccent(h);
+    const level = Math.min(1.5, Math.max(0.6, 10 ** ((h.db - ref[accent]) / 20)));
     const t = t0 + h.time - take[0].time;
     E.playNote(kit, accent, t, level);
     if (i < phrase.notes.length) later(() => flash(i, 'now'), msUntil(t));
   });
-  later(() => { if (phase === 'result') $('plate').insertAdjacentHTML('beforeend', '<span class="small">▶ Так ти зіграв</span>'); }, msUntil(t0));
-  return 0.9 + take.at(-1).time - take[0].time + 0.5;
+  return 0.25 + take.at(-1).time - take[0].time + 0.6;
 }
+
+$('replayBtn').onclick = () => {
+  if (lastTake?.key !== phraseKey() || !(phase === 'result' || phase === 'wait')) return;
+  $('replayBtn').disabled = true;
+  const wasWaiting = phase === 'wait';
+  if (!wasWaiting) clearTimers();   // hold the flow while it plays
+  const ms = replay(lastTake.hits) * 1000;
+  const plate = $('plate').innerHTML, cls = $('plate').className;
+  setPlate('listen', '▶ Так ти зіграв');
+  later(() => {
+    $('plate').className = cls;
+    $('plate').innerHTML = plate;
+    if (wasWaiting) $('replayBtn').disabled = false;
+    else nextPhrase();
+  }, ms + 400);
+};
 
 function simulatePlayer() {
   const gap = noteGap(phrase.bpm);
@@ -647,8 +674,6 @@ $('blinkCheck').checked = prefs.blink;
 $('blinkCheck').onchange = () => { prefs.blink = $('blinkCheck').checked; savePrefs(); };
 $('leftTopCheck').checked = prefs.leftTop;
 $('leftTopCheck').onchange = () => { prefs.leftTop = $('leftTopCheck').checked; savePrefs(); if (phrase) { renderGrid(); } };
-$('replayCheck').checked = prefs.replay;
-$('replayCheck').onchange = () => { prefs.replay = $('replayCheck').checked; savePrefs(); };
 
 setPlate('', 'Одягни навушники і натисни «Почати»',
   `Спочатку коротка перевірка звуку і розминка, потім повторення і нове. Зараз: ${STEPS[progress.current].title}, ${TEMPOS[progress.steps[STEPS[progress.current].id].t]} BPM.`);

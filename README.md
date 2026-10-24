@@ -10,7 +10,7 @@ Personal rudiment trainer in "echo" style (phone plays a sticking phrase, you re
 - Help ladder when a phrase doesn't come out: again → a tempo step slower → the trouble spot alone in a loop → whole phrase slow → back in tempo; nothing moves on by itself
 - Short sound check at the start (silence, soft hits, accents): sensitivity adapts, Gain advice
 - Visuals: the screen frame pulses on every beat (re-syncs to your first hit), each hit pops on its note, per-note loudness bars, hands in their own colour with a letter, clean streak
-- Settings: sound (recorded pad or synthesized snare), judging (soft/normal/strict), mic sensitivity, metronome volume, beat frame, left hand on top, optional "how you played" replay
+- Settings: sound (recorded pad or synthesized snare), judging (soft/normal/strict), mic sensitivity, metronome volume, beat frame, left hand on top, plus an on-demand "how you played" button (accent = above half of your own soft→accent gap from the sound check)
 - Progress in localStorage
 
 **Detector test page** (`test.html`, `app.js`): live level and detected hits, sensitivity, latency calibration, pad sample recording (IndexedDB).
