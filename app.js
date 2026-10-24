@@ -33,7 +33,8 @@ let meterDb = -100;
 async function ensureCtx() {
   if (!ctx) {
     ctx = new AudioContext({ latencyHint: 'interactive' });
-    await ctx.audioWorklet.addModule('onset-worklet.js');
+    // bump when onset-worklet.js changes: worklet modules can outlive a hard reload in the cache
+    await ctx.audioWorklet.addModule('onset-worklet.js?v=2');
   }
   if (ctx.state !== 'running') await ctx.resume();
   return ctx;
