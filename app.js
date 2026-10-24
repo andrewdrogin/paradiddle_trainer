@@ -1,4 +1,5 @@
 import { listSamples, addSample, deleteSample } from './db.js';
+import { renderSnareKit } from './snare.js';
 
 const $ = id => document.getElementById(id);
 const toDb = v => 20 * Math.log10(Math.max(v, 1e-6));
@@ -7,7 +8,7 @@ const toDb = v => 20 * Math.log10(Math.max(v, 1e-6));
 
 const SETTINGS_KEY = 'pt.settings';
 const LATENCY_KEY = 'pt.latency';
-const settings = { sensDb: 18, guardMs: 60, bpm: 80, reps: 2, deviceId: '' };
+const settings = { sensDb: 18, guardMs: 60, bpm: 80, reps: 2, deviceId: '', kit: 'pad' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
@@ -182,6 +183,8 @@ bindSlider('guard', 'guardMs', v => node?.port.postMessage({ guardMs: v }));
 bindSlider('bpm', 'bpm');
 $('reps').value = settings.reps;
 $('reps').onchange = e => { settings.reps = Number(e.target.value); saveSettings(); };
+$('kitSelect').value = settings.kit;
+$('kitSelect').onchange = e => { settings.kit = e.target.value; saveSettings(); updatePhraseBtn(); };
 
 // ---------- counter ----------
 
@@ -601,7 +604,7 @@ async function refreshSamples() {
     info.textContent = `${toDb(s.peak).toFixed(0)} дБ · ${(s.data.length / s.sampleRate * 1000).toFixed(0)} мс`;
     const play = document.createElement('button');
     play.textContent = '▶';
-    play.onclick = async () => { await ensureCtx(); playSample(s, ctx.currentTime + 0.02); };
+    play.onclick = async () => { await ensureCtx(); playSample(s, ctx.currentTime + 0.02, playbackGain(samples)); };
     const del = document.createElement('button');
     del.textContent = '✕';
     del.onclick = async () => { await deleteSample(s.id); buffers.delete(s.id); refreshSamples(); };
@@ -609,9 +612,7 @@ async function refreshSamples() {
     list.append(row);
     drawWave(c, s.data);
   }
-  const soft = samples.filter(s => s.kind === 'soft').length;
-  const acc = samples.filter(s => s.kind === 'accent').length;
-  $('playPhraseBtn').disabled = !(soft && acc);
+  updatePhraseBtn();
   if (!samples.length) list.innerHTML = '<span class="muted small">Ще немає записів. Потрібен хоча б один тихий і один акцент.</span>';
 }
 
@@ -629,10 +630,23 @@ function drawWave(c, data) {
   }
 }
 
-// all samples share one gain so soft/accent keep their real loudness ratio
-function playbackGain() {
-  const maxPeak = Math.max(1e-4, ...samples.map(s => s.peak));
+// all takes of a kit share one gain so soft/accent keep their real loudness ratio
+function playbackGain(kit) {
+  const maxPeak = Math.max(1e-4, ...kit.map(s => s.peak));
   return Math.min(0.8 / maxPeak, 100);
+}
+
+// sound of the phrase: the recorded pad, or the synthesized snare (rendered once, on first use)
+let snareKit = null;
+async function kitSamples() {
+  if (settings.kit !== 'snare') return samples;
+  snareKit ??= await renderSnareKit(ctx.sampleRate);
+  return snareKit;
+}
+
+function updatePhraseBtn() {
+  const hasPad = samples.some(s => s.kind === 'soft') && samples.some(s => s.kind === 'accent');
+  $('playPhraseBtn').disabled = settings.kit === 'pad' && !hasPad;
 }
 
 // random round-robin: never the same take twice in a row, so repeated notes don't sound like a machine gun
@@ -645,7 +659,7 @@ function pickSample(pool) {
   return s;
 }
 
-function playSample(s, t) {
+function playSample(s, t, gain) {
   let buf = buffers.get(s.id);
   if (!buf) {
     buf = ctx.createBuffer(1, s.data.length, s.sampleRate);
@@ -655,7 +669,7 @@ function playSample(s, t) {
   const src = ctx.createBufferSource();
   const g = ctx.createGain();
   src.buffer = buf;
-  g.gain.value = playbackGain();
+  g.gain.value = gain;
   src.connect(g).connect(ctx.destination);
   src.start(t);
 }
@@ -672,9 +686,11 @@ renderPhrase();
 
 $('playPhraseBtn').onclick = async () => {
   await ensureCtx();
-  const soft = samples.filter(s => s.kind === 'soft');
-  const acc = samples.filter(s => s.kind === 'accent');
+  const kit = await kitSamples();
+  const soft = kit.filter(s => s.kind === 'soft');
+  const acc = kit.filter(s => s.kind === 'accent');
   if (!soft.length || !acc.length) return;
+  const gain = playbackGain(kit);
   const step = 60 / settings.bpm / 4;
   const t0 = ctx.currentTime + 0.15;
   const spans = $('phrase').children;
@@ -683,7 +699,7 @@ $('playPhraseBtn').onclick = async () => {
     for (let i = 0; i < STICKING.length; i++, n++) {
       const pool = ACCENTS.includes(i) ? acc : soft;
       const t = t0 + n * step;
-      playSample(pickSample(pool), t);
+      playSample(pickSample(pool), t, gain);
       const delay = (t - ctx.currentTime + (ctx.outputLatency || 0)) * 1000;
       setTimeout(() => {
         [...spans].forEach((s, k) => s.classList.toggle('now', k === i));
