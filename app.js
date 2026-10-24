@@ -34,7 +34,7 @@ async function ensureCtx() {
   if (!ctx) {
     ctx = new AudioContext({ latencyHint: 'interactive' });
     // bump when onset-worklet.js changes: worklet modules can outlive a hard reload in the cache
-    await ctx.audioWorklet.addModule('onset-worklet.js?v=2');
+    await ctx.audioWorklet.addModule('onset-worklet.js?v=4');
   }
   if (ctx.state !== 'running') await ctx.resume();
   return ctx;
@@ -425,15 +425,15 @@ const buffers = new Map(); // id -> AudioBuffer
 // A series: press → short countdown (the click is ignored) → play hits → it finishes by itself
 // after a pause, keeps the hits that sound alike and replaces the old samples of that kind.
 const SERIES_COUNTDOWN = 2;    // seconds before recording starts
-const SERIES_END_SILENCE = 2;  // seconds without hits that finish the series
+const SERIES_END_SILENCE = 3;  // seconds without hits that finish the series
 const SERIES_MAX = 16;         // hard stop
 const SERIES_KEEP = 8;         // samples kept per kind
 const OUTLIER_DB = 6;          // hits further than this from the series median are dropped
 const SERIES_IDLE = 10;        // seconds with no hit at all before giving up
-const SERIES_GATE_DB = 20;     // hits this much quieter than the loudest one so far are room noise, not the pad
+const SERIES_GATE_DB = 20;     // hits this much quieter than the series' typical hit are room noise, not the pad
 let series = [];               // trimmed captures of the current series
 let seriesHits = 0;            // pad hits heard in the current series (captured or not)
-let seriesTopDb = -Infinity;   // loudest hit of the current series
+let seriesDbs = [];            // loudness of the pad hits heard in the current series
 let seriesLive = false;        // countdown is over, hits count
 let seriesTimer = null;
 let countdownTimer = null;
@@ -444,7 +444,9 @@ function setRec(state, html) {
   $('recStatus').innerHTML = html;
 }
 
-const isPadHit = db => db >= seriesTopDb - SERIES_GATE_DB;
+// median, not max: one stray knock must not make every normal hit look like noise
+const median = a => [...a].sort((x, y) => x - y)[a.length >> 1];
+const isPadHit = db => !seriesDbs.length || db >= median(seriesDbs) - SERIES_GATE_DB;
 
 // finish once the pad has been silent for a while; with no hits at all, give up after SERIES_IDLE
 function scheduleSeriesEnd(sec) {
@@ -454,10 +456,10 @@ function scheduleSeriesEnd(sec) {
 
 function onSeriesHit(db) {
   if (!captureKind || !seriesLive || !isPadHit(db)) return;
-  seriesTopDb = Math.max(seriesTopDb, db);
+  seriesDbs.push(db);
   seriesHits++;
-  // +0.5 s so the last hit's capture (posted ~0.45 s after onset) is in before finishing
-  scheduleSeriesEnd(SERIES_END_SILENCE + 0.5);
+  // the last hit's capture is posted ~1.6 s after its onset (it keeps the ring-out), well inside this pause
+  scheduleSeriesEnd(SERIES_END_SILENCE);
   showSeries();
 }
 
@@ -472,7 +474,7 @@ function showSeries() {
   const what = captureKind === 'soft' ? 'ТИХІ удари' : 'АКЦЕНТИ';
   const tail = seriesHits
     ? `Почув: ${seriesHits}, записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.`
-    : 'По одному, приблизно раз на секунду.';
+    : 'По одному, приблизно раз на дві секунди, щоб звук встиг відзвучати.';
   setRec('go', `<b>Грай ${what}</b><span class="small">${tail}</span>`);
 }
 
@@ -496,7 +498,7 @@ function armCapture(kind) {
   captureKind = kind;
   series = [];
   seriesHits = 0;
-  seriesTopDb = -Infinity;
+  seriesDbs = [];
   node.port.postMessage({ capture: true, armDelay: SERIES_COUNTDOWN });
   updateRecButtons();
   let left = SERIES_COUNTDOWN;
