@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <title>Тест детектора ударів</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="startBtn" class="big primary">▶ Старт</button>
+    <div class="status">
+      <div id="status">Мікрофон вимкнено</div>
+      <div id="deviceLabel" class="muted"></div>
+    </div>
+    <span class="muted version">v0.1</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Рівень входу</h2>
+      <div class="meter"><div id="meterFill"></div><div id="meterThr"></div></div>
+      <div class="row muted small">
+        <span>Пік: <b id="levelDb">–</b> дБ</span>
+        <span>Шум: <b id="floorDb">–</b> дБ</span>
+        <span>Поріг: <b id="thrDb">–</b> дБ</span>
+      </div>
+      <canvas id="timeline" height="160"></canvas>
+      <label class="slider">
+        <span>Поріг над шумом: <b id="sensVal"></b> дБ <span class="muted">(менше = чутливіше)</span></span>
+        <input id="sens" type="range" min="6" max="36" step="1">
+      </label>
+      <label class="slider">
+        <span>Захист від повтору: <b id="guardVal"></b> мс</span>
+        <input id="guard" type="range" min="25" max="150" step="5">
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Лічильник ударів</h2>
+      <div class="counter"><span id="hitCount">0</span><span class="muted">виявлено</span></div>
+      <div class="row">
+        <button id="resetBtn" class="big">Скинути</button>
+        <label class="inline">Я зіграв <input id="playedN" type="number" min="1" max="999" inputmode="numeric" value="16"></label>
+        <button id="checkBtn" class="big">Перевірити</button>
+      </div>
+      <div id="checkResult" class="result"></div>
+    </section>
+
+    <section class="card">
+      <h2>Акценти: гучність кожного удару</h2>
+      <canvas id="bars" height="160"></canvas>
+      <div id="accentStats" class="result muted">Зіграй кілька тихих і акцентованих ударів упереміш.</div>
+    </section>
+
+    <section class="card">
+      <h2>Калібрування затримки</h2>
+      <p class="muted small">Тільки в навушниках. 4 високі клацання — відлік (не бий), потім 8 клацань — бий разом з ними.</p>
+      <div class="row">
+        <button id="calBtn" class="big">Калібрувати (80 BPM)</button>
+        <div id="calDots" class="dots"></div>
+      </div>
+      <div id="calResult" class="result"></div>
+    </section>
+
+    <section class="card">
+      <h2>Записи пада</h2>
+      <p class="muted small">Натисни кнопку, потім удар <b>один раз</b> і почекай пів секунди. Можна записати кілька варіантів кожного.</p>
+      <div class="row">
+        <button id="recSoftBtn" class="big">● Тихий удар</button>
+        <button id="recAccentBtn" class="big">● Акцент</button>
+      </div>
+      <div id="recStatus" class="result"></div>
+      <div id="sampleList" class="samples"></div>
+      <div id="phrase" class="phrase"></div>
+      <label class="slider">
+        <span>Темп: <b id="bpmVal"></b> BPM (шістнадцяті)</span>
+        <input id="bpm" type="range" min="40" max="160" step="2">
+      </label>
+      <div class="row">
+        <label class="inline">Повторів
+          <select id="reps"><option>1</option><option>2</option><option>4</option></select>
+        </label>
+        <button id="playPhraseBtn" class="big primary">▶ Тестова фраза</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <details>
+        <summary>Деталі пристрою</summary>
+        <label class="inline">Мікрофон <select id="deviceSelect"><option value="">типовий</option></select></label>
+        <pre id="deviceInfo" class="small"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
