@@ -92,13 +92,18 @@ function stop() {
 
 const running = () => !!node;
 
+let starting = false;  // a second tap while the mic is still opening would start a second detector
 $('startBtn').onclick = async () => {
+  if (starting) return;
   if (running()) { stop(); return; }
+  starting = true;
   try {
     await start();
   } catch (e) {
     stop();
     $('status').textContent = 'Помилка: ' + (e.message || e.name);
+  } finally {
+    starting = false;
   }
 };
 
@@ -121,6 +126,7 @@ function onWorkletMessage(e) {
     $('hitCount').textContent = hitCount;
     drawBars();
     onCalibrationHit(m.time);
+    onSeriesHit();
   } else if (m.type === 'capture') {
     onCapture(m);
   }
@@ -422,9 +428,26 @@ const SERIES_END_SILENCE = 2;  // seconds without hits that finish the series
 const SERIES_MAX = 16;         // hard stop
 const SERIES_KEEP = 8;         // samples kept per kind
 const OUTLIER_DB = 6;          // hits further than this from the series median are dropped
+const SERIES_IDLE = 10;        // seconds with no hit at all before giving up
 let series = [];               // trimmed captures of the current series
+let seriesHits = 0;            // hits heard in the current series (captured or not)
+let seriesLive = false;        // countdown is over, hits count
 let seriesTimer = null;
 let countdownTimer = null;
+
+// finish once the pad has been silent for a while; with no hits at all, give up after SERIES_IDLE
+function scheduleSeriesEnd(sec) {
+  clearTimeout(seriesTimer);
+  seriesTimer = setTimeout(finishSeries, sec * 1000);
+}
+
+function onSeriesHit() {
+  if (!captureKind || !seriesLive) return;
+  seriesHits++;
+  // +0.5 s so the last hit's capture (posted ~0.45 s after onset) is in before finishing
+  scheduleSeriesEnd(SERIES_END_SILENCE + 0.5);
+  $('recStatus').textContent = seriesStatus();
+}
 
 function updateRecButtons() {
   $('recSoftBtn').classList.toggle('armed', captureKind === 'soft');
@@ -435,7 +458,7 @@ function updateRecButtons() {
 
 function seriesStatus() {
   const what = captureKind === 'soft' ? 'ТИХІ удари' : 'АКЦЕНТИ';
-  const tail = series.length ? `Записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.` : '';
+  const tail = seriesHits ? `Почув: ${seriesHits}, записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.` : '';
   return `Грай ${what} по одному, приблизно раз на секунду. ${tail}`;
 }
 
@@ -443,6 +466,7 @@ function endSeries() {
   clearTimeout(seriesTimer);
   clearInterval(countdownTimer);
   seriesTimer = countdownTimer = null;
+  seriesLive = false;
   captureKind = null;
   node?.port.postMessage({ capture: false });
   updateRecButtons();
@@ -457,6 +481,7 @@ function armCapture(kind) {
   }
   captureKind = kind;
   series = [];
+  seriesHits = 0;
   node.port.postMessage({ capture: true, armDelay: SERIES_COUNTDOWN });
   updateRecButtons();
   let left = SERIES_COUNTDOWN;
@@ -465,6 +490,8 @@ function armCapture(kind) {
     if (--left > 0) { $('recStatus').textContent = `Приготуйся… ${left}`; return; }
     clearInterval(countdownTimer);
     countdownTimer = null;
+    seriesLive = true;
+    scheduleSeriesEnd(SERIES_IDLE);
     $('recStatus').textContent = seriesStatus();
   }, 1000);
 }
@@ -481,12 +508,23 @@ function pickConsistent(items) {
 
 async function finishSeries() {
   const kind = captureKind;
+  const heard = seriesHits;
   endSeries();
-  if (!series.length) { $('recStatus').textContent = 'Не почув жодного удару, старі записи лишились.'; return; }
+  if (!series.length) {
+    $('recStatus').textContent = heard
+      ? `Почув ${heard} ударів, але жоден не записався. Спробуй ще раз, трохи повільніше.`
+      : 'Не почув жодного удару. Глянь на рівень зліва: удари мають підніматися над червоною лінією порогу.';
+    return;
+  }
   const kept = pickConsistent(series);
-  for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
-  for (const s of kept) await addSample({ kind, ...s, created: Date.now() });
-  await refreshSamples();
+  try {
+    for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
+    for (const s of kept) await addSample({ kind, ...s, created: Date.now() });
+    await refreshSamples();
+  } catch (e) {
+    $('recStatus').textContent = 'Не вдалося зберегти записи: ' + (e.message || e.name);
+    return;
+  }
   const dropped = series.length - kept.length;
   $('recStatus').innerHTML = `<span class="ok">Все, записано! ${kept.length} ${kind === 'soft' ? 'тихих' : 'акцентів'} у бібліотеці.</span>` +
     (dropped ? ` <span class="muted small">${dropped} відкинув: випадали за гучністю або зайві.</span>` : '');
@@ -523,9 +561,7 @@ function onCapture(m) {
   if (!captureKind) return;
   const { data, peak } = trimCapture(m.data, m.onsetIndex, m.sampleRate);
   series.push({ sampleRate: m.sampleRate, data, peak });
-  clearTimeout(seriesTimer);
   if (series.length >= SERIES_MAX) { finishSeries(); return; }
-  seriesTimer = setTimeout(finishSeries, SERIES_END_SILENCE * 1000);
   $('recStatus').textContent = seriesStatus();
 }
 
