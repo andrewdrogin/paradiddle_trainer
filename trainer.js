@@ -189,12 +189,20 @@ function showHeader() {
 
 // ---------- beat pulse ----------
 
-// The frame pulses on every beat (a quarter = two eighth notes), brighter on "1". It keeps going
-// from "listen" into "your turn", so you can come in on any pulse; your first hit re-syncs it to you.
-let beat = null;            // { t0, period } on the heard timeline (ctx time of the sound)
+// The frame pulses on the beats, bright on "1", plus a faint pulse on an "і" half-beat when a stroke
+// falls on it. It keeps going from "listen" into "your turn" (beats only, no strokes there), so you
+// can come in on any pulse; your first hit re-syncs it to you.
+let beat = null;            // { t0, period: one eighth, strokes: eighths that carry a stroke } on the heard timeline
 let lastBeat = -1;
 
-function startBeat(t0, period) { beat = { t0, period }; lastBeat = -1; }
+function startBeat(t0, period, strokes) { beat = { t0, period, strokes }; lastBeat = -1; }
+
+// pulse for eighth k: 'strong' on "1", 'beat' on 2/3/4, 'half' on an "і" with a stroke, else none
+export function pulseKind(k, strokes) {
+  if (k % 8 === 0) return 'strong';
+  if (k % 2 === 0) return 'beat';
+  return k < strokes ? 'half' : null;
+}
 function stopBeat() { beat = null; }
 
 (function beatLoop() {
@@ -203,14 +211,17 @@ function stopBeat() { beat = null; }
     const k = Math.floor((heard - beat.t0) / beat.period + 0.001);
     if (k >= 0 && k !== lastBeat) {
       lastBeat = k;
-      const frame = $('beatFrame');
-      frame.className = '';
-      void frame.offsetWidth;
-      frame.className = k % 4 === 0 ? 'pulse strong' : 'pulse';
-      const c = countEl((k % 4) * 2);
-      if (c && phase !== 'result') {
-        $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
-        c.classList.add('on');
+      const kind = pulseKind(k, beat.strokes);
+      if (kind) {
+        const frame = $('beatFrame');
+        frame.className = '';
+        void frame.offsetWidth;
+        frame.className = 'pulse ' + kind;
+        const c = countEl(k % 8);
+        if (c && phase !== 'result') {
+          $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
+          c.classList.add('on');
+        }
       }
     }
   }
@@ -358,7 +369,7 @@ function listen() {
   $('againBtn').disabled = true;
   const gap = noteGap(phrase.bpm);
   const t0 = E.ctx.currentTime + LISTEN_LEAD;
-  startBeat(t0, 2 * gap);
+  startBeat(t0, gap, phrase.notes.length);
   phrase.notes.forEach((nt, i) => {
     const t = t0 + i * gap;
     E.playNote(kit, nt.accent, t);
@@ -387,7 +398,7 @@ function onHit(h) {
     // the pulse and the soft click now follow the player's own first hit. A hit is stamped in+out
     // latency after the stroke on the timeline sounds are scheduled on, so that is taken off.
     const start = h.time - E.latencySec();
-    startBeat(start, 2 * gap);
+    startBeat(start, gap, n);
     for (let i = 2; i < n; i += 2) {
       const t = start + i * gap;
       if (t > E.ctx.currentTime) E.click(t, prefs.metro / 100);

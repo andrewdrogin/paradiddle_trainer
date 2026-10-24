@@ -221,9 +221,11 @@ a { color: #9cc3ff; }
 #beatFrame { position: fixed; inset: 0; pointer-events: none; z-index: 5; border: 6px solid transparent; border-radius: 4px; }
 #beatFrame.pulse { animation: beat .32s ease-out; }
 #beatFrame.pulse.strong { animation: beat-strong .4s ease-out; }
+#beatFrame.pulse.half { animation: beat-half .2s ease-out; }
+@keyframes beat-half { from { border-color: rgba(156, 195, 255, .28); } to { border-color: transparent; } }
 @keyframes beat { from { border-color: rgba(156, 195, 255, .75); } to { border-color: transparent; } }
 @keyframes beat-strong { from { border-color: #fff; box-shadow: inset 0 0 40px rgba(156, 195, 255, .5); } to { border-color: transparent; box-shadow: none; } }
-body.fever #beatFrame.pulse { animation-name: beat-fever; }
+body.fever #beatFrame.pulse:not(.half) { animation-name: beat-fever; }
 @keyframes beat-fever { from { border-color: var(--accent); box-shadow: inset 0 0 40px rgba(255, 159, 67, .45); } to { border-color: transparent; box-shadow: none; } }
 .grid .count.on { color: var(--text); font-weight: 700; }
 
