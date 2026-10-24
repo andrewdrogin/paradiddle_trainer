@@ -9,6 +9,8 @@
   --ok: #66d17a;
   --bad: #ff6b6b;
   --primary: #2f80ed;
+  --right: #ff7a59;
+  --left: #4fc3f7;
   color-scheme: dark;
 }
 
@@ -160,19 +162,32 @@ summary { cursor: pointer; color: var(--muted); }
 .grid .mark { text-align: center; font-weight: 700; min-height: 1.4em; }
 .grid .count { text-align: center; }
 
+.grid .hand.R { color: var(--right); }
+.grid .hand.L { color: var(--left); }
+.grid .slot.R { background: rgba(255, 122, 89, .07); }
+.grid .slot.L { background: rgba(79, 195, 247, .07); }
+
+/* each hand has its colour and letter; the result is a ring around the note, so the colour stays */
 .note {
+  --hand: var(--right);
   width: var(--dot); height: var(--dot);
   border-radius: 50%;
-  border: 3px solid var(--soft);
+  border: 3px solid var(--hand);
+  background: color-mix(in srgb, var(--hand) 18%, transparent);
+  color: var(--hand);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: calc(var(--dot) * .45); line-height: 1;
   transition: background .08s, box-shadow .08s;
 }
-.note.acc { width: calc(var(--dot) * 1.45); height: calc(var(--dot) * 1.45); border-color: var(--accent); border-width: 4px; }
-.note.now { background: var(--primary); box-shadow: 0 0 0 6px rgba(47, 128, 237, .35); }
-.note.heard { background: rgba(230, 233, 238, .35); }
-.note.ok { background: var(--ok); border-color: var(--ok); }
-.note.early, .note.late { background: #f2c94c; border-color: #f2c94c; }
-.note.miss { border-color: var(--bad); border-style: dashed; }
-.note.weak { background: rgba(255, 159, 67, .25); border-style: dashed; }
+.note.L { --hand: var(--left); }
+.note.acc { width: calc(var(--dot) * 1.45); height: calc(var(--dot) * 1.45); border-width: 4px; font-size: calc(var(--dot) * .6); }
+.note.acc::before { content: ">"; position: absolute; top: -1.1em; font-size: 15px; color: var(--text); }
+.note.now { background: var(--hand); color: #111; box-shadow: 0 0 0 6px color-mix(in srgb, var(--hand) 40%, transparent); }
+.note.heard { background: color-mix(in srgb, var(--hand) 55%, transparent); color: #111; }
+.note.ok { box-shadow: 0 0 0 4px var(--ok); }
+.note.early, .note.late { box-shadow: 0 0 0 4px #f2c94c; }
+.note.miss { border-style: dashed; opacity: .55; box-shadow: 0 0 0 3px var(--bad); }
+.note.weak { box-shadow: 0 0 0 4px var(--accent); border-style: dashed; }
 .mark.ok { color: var(--ok); }
 .mark.early, .mark.late { color: #f2c94c; }
 .mark.miss { color: var(--bad); }
@@ -200,4 +215,35 @@ a { color: #9cc3ff; }
   .trainer .rec { min-height: 0; padding: 6px 12px; }
   .trainer .rec b { font-size: 1.1em; }
   .trainer .row { margin: 6px 0 0; }
+}
+
+/* beat frame: the whole screen edge pulses on every beat, brighter on "1" (Patapon-style) */
+#beatFrame { position: fixed; inset: 0; pointer-events: none; z-index: 5; border: 6px solid transparent; border-radius: 4px; }
+#beatFrame.pulse { animation: beat .32s ease-out; }
+#beatFrame.pulse.strong { animation: beat-strong .4s ease-out; }
+@keyframes beat { from { border-color: rgba(156, 195, 255, .75); } to { border-color: transparent; } }
+@keyframes beat-strong { from { border-color: #fff; box-shadow: inset 0 0 40px rgba(156, 195, 255, .5); } to { border-color: transparent; box-shadow: none; } }
+body.fever #beatFrame.pulse { animation-name: beat-fever; }
+@keyframes beat-fever { from { border-color: var(--accent); box-shadow: inset 0 0 40px rgba(255, 159, 67, .45); } to { border-color: transparent; box-shadow: none; } }
+.grid .count.on { color: var(--text); font-weight: 700; }
+
+/* instant hit feedback: a ring bursting out of the note */
+.note { position: relative; }
+.note::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 3px solid transparent; pointer-events: none; }
+.note.pop-perfect::after { animation: pop .45s ease-out; border-color: #fff; }
+.note.pop-good::after { animation: pop .45s ease-out; border-color: var(--ok); }
+.note.pop-off::after { animation: pop-small .35s ease-out; border-color: #f2c94c; }
+@keyframes pop { from { transform: scale(1); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
+@keyframes pop-small { from { transform: scale(1); opacity: .9; } to { transform: scale(1.6); opacity: 0; } }
+
+/* per-note loudness after an attempt */
+.grid .vel { height: 26px; display: flex; align-items: flex-end; justify-content: center; }
+.grid .vel i { display: block; width: 40%; max-width: 14px; height: 0; background: var(--muted); border-radius: 2px 2px 0 0; transition: height .15s; }
+.grid .vel i.acc { background: #fff; }
+
+.head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.streak { font-weight: 700; color: var(--accent); min-height: 1.2em; }
+
+@media (max-height: 500px) {
+  .grid .vel { height: 14px; }
 }

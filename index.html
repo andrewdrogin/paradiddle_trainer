@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="trainer">
+  <div id="beatFrame"></div>
   <header class="topbar">
     <button id="goBtn" class="big primary">▶ Почати</button>
     <nav id="stages" class="stages">
@@ -25,7 +26,10 @@
           <div id="phraseTitle" class="phrase-title">Натисни «Почати»</div>
           <div id="phraseSub" class="muted small"></div>
         </div>
-        <div id="micLabel" class="muted small"></div>
+        <div class="head-right">
+          <div id="streak" class="streak"></div>
+          <div id="micLabel" class="muted small"></div>
+        </div>
       </div>
 
       <div id="grid" class="grid"></div>
@@ -49,9 +53,16 @@
             <select id="strictSelect"></select>
           </label>
           <label class="slider">
+            <span>Чутливість мікрофона: <b id="sensVal"></b></span>
+            <input id="sens" type="range" min="0" max="30" step="1">
+            <span class="muted small">Удари губляться — праворуч. Ловить зайве (кімнату, хвіст пада) — ліворуч.</span>
+          </label>
+          <label class="slider">
             <span>Метроном: <b id="metroVal"></b></span>
             <input id="metro" type="range" min="0" max="100" step="5">
           </label>
+          <label class="inline check"><input id="leftTopCheck" type="checkbox"> Ліва рука зверху</label>
+          <label class="inline check"><input id="blinkCheck" type="checkbox"> Мигалка: рамка екрана блимає на кожну долю</label>
           <label class="inline check"><input id="replayCheck" type="checkbox"> «Як я зіграв»: після кожної спроби програти її звуком барабана</label>
           <p class="muted small">Мікрофон, чутливість, записи пада і калібрування затримки — на <a href="test.html">сторінці тесту</a>.</p>
         </div>

@@ -32,8 +32,8 @@ export async function ensureCtx() {
 
 export const listening = () => !!node;
 
-// onHit({ time, db }) — time is on the ctx clock (input side)
-export async function startMic(onHit) {
+// onHit({ time, db }) — time is on the ctx clock (input side); onLevel(db) — live input peak, ~100/s
+export async function startMic(onHit, onLevel) {
   await ensureCtx();
   node = new AudioWorkletNode(ctx, 'onset', {
     numberOfInputs: 1,
@@ -41,7 +41,10 @@ export async function startMic(onHit) {
     outputChannelCount: [1],
     processorOptions: { sensDb: settings.sensDb, guardMs: settings.guardMs },
   });
-  node.port.onmessage = e => { if (e.data.type === 'hit') onHit({ time: e.data.time, db: e.data.db }); };
+  node.port.onmessage = e => {
+    if (e.data.type === 'hit') onHit({ time: e.data.time, db: e.data.db });
+    else if (e.data.type === 'level') onLevel?.(e.data.db);
+  };
   const sink = ctx.createGain();
   sink.gain.value = 0;
   node.connect(sink).connect(ctx.destination);
@@ -63,6 +66,13 @@ export async function startMic(onHit) {
   source.connect(node);
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
   return stream.getAudioTracks()[0]?.label || 'мікрофон';
+}
+
+// detection threshold above the noise floor, dB: lower = more sensitive
+export function setSensitivity(sensDb) {
+  settings.sensDb = sensDb;
+  saveSettings();
+  node?.port.postMessage({ sensDb });
 }
 
 export function stopMic() {
