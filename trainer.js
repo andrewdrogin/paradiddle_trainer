@@ -482,7 +482,8 @@ function stepHelp(r) {
   let msg = null;
   if (stage !== 'warmup') {
     const idx = stage === 'review' ? reviewQueue[0] : progress.current;
-    msg = recordAttempt(progress, idx, r.clean);
+    // a clean take in your own tempo is accepted, but only one near the target moves the course on
+    msg = recordAttempt(progress, idx, r.onTarget);
     saveProgress(progress);
   }
   if (!r.clean) {

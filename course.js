@@ -27,11 +27,12 @@ export const WARMUP = [
   { title: 'Одиночні', sticking: 'RLRLRLRL', accents: [], bpm: 60 },
 ];
 
-// how lenient the judging is: timing window (share of the note gap) and accent margin (dB)
+// how lenient the judging is: timing window (share of the note gap), accent margin (dB) and how far
+// the player's own steady tempo may be from the target and still be judged on its own grid
 export const STRICTNESS = {
-  soft: { label: 'М\'яко', window: 0.25, accentDb: 4 },
-  normal: { label: 'Нормально', window: 0.15, accentDb: 6 },
-  strict: { label: 'Строго', window: 0.1, accentDb: 8 },
+  soft: { label: 'М\'яко', window: 0.25, accentDb: 4, tempoFree: 0.2 },
+  normal: { label: 'Нормально', window: 0.15, accentDb: 6, tempoFree: 0.08 },
+  strict: { label: 'Строго', window: 0.1, accentDb: 8, tempoFree: 0 },
 };
 
 export const notesOf = (sticking, accents) =>
@@ -43,6 +44,8 @@ export function stepPhrase(step, st) {
 }
 
 export const noteGap = bpm => 60 / bpm / 2;
+
+const ON_TARGET = 0.08;   // a clean take this close to the target tempo counts towards progress
 
 const median = a => [...a].sort((x, y) => x - y)[a.length >> 1];
 const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
@@ -64,18 +67,13 @@ function match(n, gap, hits, t0, window) {
   return out;
 }
 
-// Judge one echo. The phrase grid starts at the player's first hit (then re-centred on all hits),
-// so mic/output latency never counts as being late.
-// -> { clean, notes: [{ status, dev, db }], extra, hint, tempoRatio }
-//    status: ok | early | late | miss | weak (accent not louder than the taps)
-export function grade(phrase, hits, strictness) {
-  const { window, accentDb } = STRICTNESS[strictness] || STRICTNESS.soft;
-  const n = phrase.notes.length;
-  const gap = noteGap(phrase.bpm);
-  if (!hits.length) {
-    return { clean: false, notes: phrase.notes.map(() => ({ status: 'miss' })), extra: 0, hint: 'Не почув ударів 🙂', tempoRatio: 1 };
-  }
+function slopeOf(pts) {
+  const mi = mean(pts.map(p => p[0])), mt = mean(pts.map(p => p[1]));
+  return pts.reduce((s, [i, t]) => s + (i - mi) * (t - mt), 0) / pts.reduce((s, [i]) => s + (i - mi) ** 2, 0);
+}
 
+// grid starting at the first hit, then re-centred on all matched hits
+function fitGrid(n, gap, hits, window) {
   let t0 = hits[0].time;
   let idx = match(n, gap, hits, t0, window);
   for (let k = 0; k < 2; k++) {
@@ -84,10 +82,40 @@ export function grade(phrase, hits, strictness) {
     t0 += mean(res);
     idx = match(n, gap, hits, t0, window);
   }
+  return { t0, idx };
+}
 
+// Judge one echo. The grid starts at the player's first hit, so mic/output latency never counts as
+// being late. Its tempo is the player's own steady tempo when that is within the strictness'
+// tempoFree of the target: playing evenly but a bit slower or faster than the metronome is fine at
+// first; speeding up or slowing down inside the phrase still shows as uneven notes.
+// -> { clean, notes: [{ status, dev, db }], extra, hint, tempoRatio, playedBpm }
+//    status: ok | early | late | miss | weak (accent not louder than the taps)
+//    tempoRatio: played note gap / target note gap (< 1 = faster than the target)
+export function grade(phrase, hits, strictness) {
+  const { window, accentDb, tempoFree } = STRICTNESS[strictness] || STRICTNESS.soft;
+  const n = phrase.notes.length;
+  const gap = noteGap(phrase.bpm);
+  if (!hits.length) {
+    return { clean: false, notes: phrase.notes.map(() => ({ status: 'miss' })), extra: 0, hint: 'Не почув ударів 🙂', tempoRatio: 1, playedBpm: null };
+  }
+
+  // the player's tempo: with the right number of hits, hit i is note i even when the late ones
+  // drifted out of their windows; otherwise use the hits matched on the target grid
+  let pts = hits.length === n ? hits.map((h, i) => [i, h.time]) : null;
+  if (!pts) {
+    const { idx } = fitGrid(n, gap, hits, window);
+    pts = idx.flatMap((h, i) => (h < 0 ? [] : [[i, hits[h].time]]));
+  }
+  const tempoRatio = pts.length >= 4 ? slopeOf(pts) / gap : 1;
+  const gridGap = gap * Math.min(1 + tempoFree, Math.max(1 - tempoFree, tempoRatio));
+  // tempo creeping inside the phrase: second half against the first
+  const creep = hits.length === n && n >= 8 ? slopeOf(pts.slice(n / 2)) / slopeOf(pts.slice(0, n / 2)) : 1;
+
+  const { t0, idx } = fitGrid(n, gridGap, hits, window);
   const notes = idx.map((h, i) => {
     if (h < 0) return { status: 'miss' };
-    const dev = (hits[h].time - (t0 + i * gap)) / gap;
+    const dev = (hits[h].time - (t0 + i * gridGap)) / gridGap;
     const status = Math.abs(dev) <= window / 2 ? 'ok' : dev < 0 ? 'early' : 'late';
     return { status, dev, db: hits[h].db };
   });
@@ -103,29 +131,27 @@ export function grade(phrase, hits, strictness) {
     });
   }
 
-  // tempo drift: slope of hit times against the grid. With the right number of hits, hit i is
-  // note i even when rushing pushed the late notes out of their windows.
-  let tempoRatio = 1;
-  const pts = hits.length === n
-    ? hits.map((h, i) => [i, h.time])
-    : idx.flatMap((h, i) => (h < 0 ? [] : [[i, hits[h].time]]));
-  if (pts.length >= 4) {
-    const mi = mean(pts.map(p => p[0])), mt = mean(pts.map(p => p[1]));
-    const slope = pts.reduce((s, [i, t]) => s + (i - mi) * (t - mt), 0) / pts.reduce((s, [i]) => s + (i - mi) ** 2, 0);
-    tempoRatio = slope / gap;
-  }
-
+  const playedBpm = Math.round(phrase.bpm / tempoRatio);
+  const offTarget = Math.abs(tempoRatio - 1) > 0.05;
   const missed = notes.filter(r => r.status === 'miss').length;
   const offGrid = notes.filter(r => r.status === 'early' || r.status === 'late').length;
   const clean = !missed && !extra && !weak;
   let hint;
-  if (clean) hint = offGrid ? 'Зараховано! Ще трохи рівніше, і буде ідеально' : 'Чисто! ✓';
-  else if (tempoRatio < 0.94) hint = 'Трохи поспішаєш, не жени 🙂';
-  else if (tempoRatio > 1.06) hint = 'Трохи тягнеш, можна живіше';
+  if (clean) {
+    const yours = `твій темп ≈ ${playedBpm}, ціль ${phrase.bpm}`;
+    if (creep < 0.9 || creep > 1.1) hint = 'Зараховано! Але темп трохи пливе всередині фрази, тримай рівно';
+    else if (offGrid) hint = offTarget ? `Зараховано! ${yours}` : 'Зараховано! Ще трохи рівніше, і буде ідеально';
+    else if (!offTarget) hint = 'Чисто! ✓';
+    else hint = `Рівно! ✓ Т${yours.slice(1)}, ${tempoRatio > 1 ? 'поступово підтягуй' : 'можна спокійніше'}`;
+  } else if (creep < 0.9) hint = 'Розганяєшся всередині фрази, тримай рівно 🙂';
+  else if (creep > 1.1) hint = 'Сповільнюєшся до кінця фрази, тримай рівно';
+  else if (tempoRatio < 1 - tempoFree - 0.04) hint = 'Трохи поспішаєш, не жени 🙂';
+  else if (tempoRatio > 1 + tempoFree + 0.04) hint = 'Трохи тягнеш, можна живіше';
   else if (missed || extra) hint = hits.length === n ? 'Удари трохи розбіглися, послухай ще раз' : 'Кількість ударів не та, послухай ще раз';
   else hint = 'Акценти можна гучніше, а тихі тихіше';
-  if (clean && tempoRatio < 0.94) hint += '. Трохи поспішаєш 🙂';
-  return { clean, notes, extra, hint, tempoRatio };
+  // only takes near the target tempo move the course on (longer phrase, faster tempo)
+  const onTarget = clean && Math.abs(tempoRatio - 1) <= ON_TARGET;
+  return { clean, onTarget, notes, extra, hint, tempoRatio, playedBpm };
 }
 
 // left vs right loudness across warm-up phrases, as "left = N % of right"; null if one hand is missing
