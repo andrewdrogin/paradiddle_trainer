@@ -5,6 +5,7 @@ const RISE_RATIO = 1.6;      // envelope must jump ~4 dB over its decayed memory
 const PEAK_WINDOW = 0.02;    // seconds after onset used to measure hit loudness
 const CAPTURE_PRE = 0.02;    // seconds of audio kept before onset when recording a sample
 const CAPTURE_POST = 0.45;   // seconds kept after onset
+const CAPTURE_ARM_DELAY = 0.4; // ignore onsets right after arming (the click/tap on the button itself)
 const LEVEL_EVERY = 4;       // post a level reading every N render quanta (~10 ms)
 
 const toDb = v => 20 * Math.log10(Math.max(v, 1e-6));
@@ -38,6 +39,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
     while (ringSize < (CAPTURE_PRE + CAPTURE_POST + 0.05) * sampleRate) ringSize *= 2;
     this.ring = new Float32Array(ringSize);
     this.captureArmed = false;
+    this.captureFrom = 0;
     this.capture = null;
 
     this.lvlPeak = 0;
@@ -47,7 +49,12 @@ class OnsetProcessor extends AudioWorkletProcessor {
       const m = e.data;
       if (m.sensDb !== undefined) this.sensDb = m.sensDb;
       if (m.guardMs !== undefined) this.guardFrames = Math.round(m.guardMs / 1000 * sampleRate);
-      if (m.capture !== undefined) this.captureArmed = m.capture;
+      if (m.capture !== undefined) {
+        // stays armed for a whole series; disarming drops a capture in progress (the click that stopped it)
+        this.captureArmed = m.capture;
+        this.captureFrom = currentFrame + Math.round(CAPTURE_ARM_DELAY * sampleRate);
+        if (!m.capture) this.capture = null;
+      }
     };
   }
 
@@ -80,7 +87,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
           frame - this.lastOnset > this.guardFrames) {
         this.lastOnset = frame;
         this.measure = { frame, peak: 0, end: frame + Math.round(PEAK_WINDOW * sampleRate) };
-        if (this.captureArmed && !this.capture) {
+        if (this.captureArmed && !this.capture && frame >= this.captureFrom) {
           this.capture = {
             onset: frame,
             start: frame - Math.round(CAPTURE_PRE * sampleRate),
@@ -104,7 +111,6 @@ class OnsetProcessor extends AudioWorkletProcessor {
         for (let k = 0; k < out.length; k++) out[k] = this.ring[(c.start + k) % ringLen];
         this.port.postMessage({ type: 'capture', data: out, onsetIndex: c.onset - c.start, sampleRate }, [out.buffer]);
         this.capture = null;
-        this.captureArmed = false;
       }
     }
 

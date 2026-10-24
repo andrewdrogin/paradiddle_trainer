@@ -416,17 +416,31 @@ function finishCalibration() {
 let samples = [];          // records from IndexedDB
 const buffers = new Map(); // id -> AudioBuffer
 
+const SERIES_MAX = 8;      // a series stops by itself after this many hits
+let seriesCount = 0;       // hits recorded in the current series
+
 function updateRecButtons() {
   $('recSoftBtn').classList.toggle('armed', captureKind === 'soft');
   $('recAccentBtn').classList.toggle('armed', captureKind === 'accent');
+  $('recSoftBtn').textContent = captureKind === 'soft' ? '■ Готово' : '● Серія тихих';
+  $('recAccentBtn').textContent = captureKind === 'accent' ? '■ Готово' : '● Серія акцентів';
 }
 
+function seriesStatus() {
+  const what = captureKind === 'soft' ? 'ТИХІ удари' : 'АКЦЕНТИ';
+  return `Грай ${what} по одному, приблизно раз на секунду. Записано: ${seriesCount} з ${SERIES_MAX}.`;
+}
+
+// a series replaces the old samples of that kind once its first hit lands
 function armCapture(kind) {
   if (!running()) { $('recStatus').textContent = 'Спочатку натисни «Старт».'; return; }
+  const was = captureKind;
   captureKind = captureKind === kind ? null : kind;
+  seriesCount = 0;
   node.port.postMessage({ capture: !!captureKind });
   updateRecButtons();
-  $('recStatus').textContent = captureKind ? (kind === 'soft' ? 'Вдар один раз ТИХО…' : 'Вдар один раз З АКЦЕНТОМ…') : '';
+  if (captureKind) $('recStatus').textContent = seriesStatus();
+  else if (was) $('recStatus').textContent = '';
 }
 $('recSoftBtn').onclick = () => armCapture('soft');
 $('recAccentBtn').onclick = () => armCapture('accent');
@@ -457,13 +471,20 @@ function trimCapture(data, onsetIndex, sr) {
 
 async function onCapture(m) {
   const kind = captureKind;
-  captureKind = null;
-  updateRecButtons();
   if (!kind) return;
+  if (seriesCount === 0) {
+    for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
+  }
+  seriesCount++;
   const { data, peak } = trimCapture(m.data, m.onsetIndex, m.sampleRate);
   await addSample({ kind, sampleRate: m.sampleRate, data, peak, created: Date.now() });
-  $('recStatus').innerHTML = `<span class="ok">Записано (${kind === 'soft' ? 'тихий' : 'акцент'}, пік ${toDb(peak).toFixed(0)} дБ, ${(data.length / m.sampleRate * 1000).toFixed(0)} мс)</span>`;
   await refreshSamples();
+  if (seriesCount >= SERIES_MAX) {
+    armCapture(kind);
+    $('recStatus').innerHTML = `<span class="ok">Серію записано: ${SERIES_MAX} ${kind === 'soft' ? 'тихих' : 'акцентів'}.</span>`;
+  } else if (captureKind === kind) {
+    $('recStatus').textContent = seriesStatus();
+  }
 }
 
 async function refreshSamples() {
