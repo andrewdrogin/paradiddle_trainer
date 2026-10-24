@@ -2,15 +2,19 @@
 
 Personal rudiment trainer in "echo" style (phone plays a sticking phrase, you repeat it on a practice pad, the mic checks timing and accents).
 
-**Step 0 — hit-detector test page** (current): checks that the phone mic reliably detects hits on a quiet mesh pad.
+**Echo trainer** (`index.html`, `trainer.js`): the app plays a phrase, waits patiently for you, you echo it on the pad, every note gets a mark.
 
-- Live input level, scrolling envelope and detected hits
-- Onset detection in an AudioWorklet (`onset-worklet.js`), sensitivity + re-trigger guard sliders
-- Hit counter with "I played N" check, per-hit loudness bars with soft/accent split
-- Latency calibration (8 clicks at 80 BPM, saved to localStorage)
-- Pad sample recording (IndexedDB) and a test phrase (RLRR LRLL) played with the recorded samples
+- Session: warm-up (mandatory, not judged, ends with left/right balance) → review of passed steps → the current new step
+- Phrase as dots: right hand on top, left below, accents big; timing judged from your own first hit, so latency doesn't count
+- Ladder of 9 steps (`course.js`): right, left, change, singles, accent/tap, accented singles, doubles, paradiddle, accented paradiddle; 60→96 BPM eighths, tempo rises by itself after 3 clean of 5
+- Settings: sound (recorded pad or synthesized snare), judging (soft/normal/strict), soft metronome volume, optional "how you played" replay
+- Progress in localStorage
+
+**Detector test page** (`test.html`, `app.js`): live level and detected hits, sensitivity, latency calibration, pad sample recording (IndexedDB).
+
+Shared: `onset-worklet.js` (onset detector on the stick click, 2 kHz high-pass, masking of the ring-out), `engine.js` (mic, sounds, click), `snare.js` (synthesized snare), `db.js`.
 
 Plain HTML/CSS/JS, no build step. Served by GitHub Pages from `main`.
-Open with `?demo` to feed synthetic hits instead of the microphone.
+Open with `?demo` to run without a microphone (test page: synthetic hits; trainer: a simulated player).
 
 Local run: `python -m http.server 8765` and open http://localhost:8765/ (mic needs localhost or HTTPS).
