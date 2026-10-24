@@ -85,8 +85,7 @@ function stop() {
   stream = source = node = null;
   wakeLock?.release().catch(() => {});
   wakeLock = null;
-  captureKind = null;
-  updateRecButtons();
+  endSeries();
   $('startBtn').textContent = '▶ Старт';
   $('status').textContent = 'Мікрофон вимкнено';
 }
@@ -416,31 +415,82 @@ function finishCalibration() {
 let samples = [];          // records from IndexedDB
 const buffers = new Map(); // id -> AudioBuffer
 
-const SERIES_MAX = 8;      // a series stops by itself after this many hits
-let seriesCount = 0;       // hits recorded in the current series
+// A series: press → short countdown (the click is ignored) → play hits → it finishes by itself
+// after a pause, keeps the hits that sound alike and replaces the old samples of that kind.
+const SERIES_COUNTDOWN = 2;    // seconds before recording starts
+const SERIES_END_SILENCE = 2;  // seconds without hits that finish the series
+const SERIES_MAX = 16;         // hard stop
+const SERIES_KEEP = 8;         // samples kept per kind
+const OUTLIER_DB = 6;          // hits further than this from the series median are dropped
+let series = [];               // trimmed captures of the current series
+let seriesTimer = null;
+let countdownTimer = null;
 
 function updateRecButtons() {
   $('recSoftBtn').classList.toggle('armed', captureKind === 'soft');
   $('recAccentBtn').classList.toggle('armed', captureKind === 'accent');
-  $('recSoftBtn').textContent = captureKind === 'soft' ? '■ Готово' : '● Серія тихих';
-  $('recAccentBtn').textContent = captureKind === 'accent' ? '■ Готово' : '● Серія акцентів';
+  $('recSoftBtn').textContent = captureKind === 'soft' ? '✕ Скасувати' : '● Серія тихих';
+  $('recAccentBtn').textContent = captureKind === 'accent' ? '✕ Скасувати' : '● Серія акцентів';
 }
 
 function seriesStatus() {
   const what = captureKind === 'soft' ? 'ТИХІ удари' : 'АКЦЕНТИ';
-  return `Грай ${what} по одному, приблизно раз на секунду. Записано: ${seriesCount} з ${SERIES_MAX}.`;
+  const tail = series.length ? `Записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.` : '';
+  return `Грай ${what} по одному, приблизно раз на секунду. ${tail}`;
 }
 
-// a series replaces the old samples of that kind once its first hit lands
+function endSeries() {
+  clearTimeout(seriesTimer);
+  clearInterval(countdownTimer);
+  seriesTimer = countdownTimer = null;
+  captureKind = null;
+  node?.port.postMessage({ capture: false });
+  updateRecButtons();
+}
+
 function armCapture(kind) {
   if (!running()) { $('recStatus').textContent = 'Спочатку натисни «Старт».'; return; }
-  const was = captureKind;
-  captureKind = captureKind === kind ? null : kind;
-  seriesCount = 0;
-  node.port.postMessage({ capture: !!captureKind });
+  if (captureKind) {                       // pressing again cancels; old samples stay
+    endSeries();
+    $('recStatus').textContent = 'Скасовано, старі записи лишились.';
+    return;
+  }
+  captureKind = kind;
+  series = [];
+  node.port.postMessage({ capture: true, armDelay: SERIES_COUNTDOWN });
   updateRecButtons();
-  if (captureKind) $('recStatus').textContent = seriesStatus();
-  else if (was) $('recStatus').textContent = '';
+  let left = SERIES_COUNTDOWN;
+  $('recStatus').textContent = `Приготуйся… ${left}`;
+  countdownTimer = setInterval(() => {
+    if (--left > 0) { $('recStatus').textContent = `Приготуйся… ${left}`; return; }
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    $('recStatus').textContent = seriesStatus();
+  }, 1000);
+}
+
+// keep the hits closest to the series median loudness, so a stray rimshot or a too-soft tap doesn't get in
+function pickConsistent(items) {
+  const dbs = items.map(s => toDb(s.peak)).sort((a, b) => a - b);
+  const median = dbs[dbs.length >> 1];
+  const dist = s => Math.abs(toDb(s.peak) - median);
+  let kept = items.filter(s => dist(s) <= OUTLIER_DB);
+  if (kept.length < Math.min(3, items.length)) kept = items;
+  return kept.sort((a, b) => dist(a) - dist(b)).slice(0, SERIES_KEEP);
+}
+
+async function finishSeries() {
+  const kind = captureKind;
+  endSeries();
+  if (!series.length) { $('recStatus').textContent = 'Не почув жодного удару, старі записи лишились.'; return; }
+  const kept = pickConsistent(series);
+  for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
+  for (const s of kept) await addSample({ kind, ...s, created: Date.now() });
+  await refreshSamples();
+  const dropped = series.length - kept.length;
+  $('recStatus').innerHTML = `<span class="ok">Все, записано! ${kept.length} ${kind === 'soft' ? 'тихих' : 'акцентів'} у бібліотеці.</span>` +
+    (dropped ? ` <span class="muted small">${dropped} відкинув: випадали за гучністю або зайві.</span>` : '');
+  series = [];
 }
 $('recSoftBtn').onclick = () => armCapture('soft');
 $('recAccentBtn').onclick = () => armCapture('accent');
@@ -469,22 +519,14 @@ function trimCapture(data, onsetIndex, sr) {
   return { data: out, peak };
 }
 
-async function onCapture(m) {
-  const kind = captureKind;
-  if (!kind) return;
-  if (seriesCount === 0) {
-    for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
-  }
-  seriesCount++;
+function onCapture(m) {
+  if (!captureKind) return;
   const { data, peak } = trimCapture(m.data, m.onsetIndex, m.sampleRate);
-  await addSample({ kind, sampleRate: m.sampleRate, data, peak, created: Date.now() });
-  await refreshSamples();
-  if (seriesCount >= SERIES_MAX) {
-    armCapture(kind);
-    $('recStatus').innerHTML = `<span class="ok">Серію записано: ${SERIES_MAX} ${kind === 'soft' ? 'тихих' : 'акцентів'}.</span>`;
-  } else if (captureKind === kind) {
-    $('recStatus').textContent = seriesStatus();
-  }
+  series.push({ sampleRate: m.sampleRate, data, peak });
+  clearTimeout(seriesTimer);
+  if (series.length >= SERIES_MAX) { finishSeries(); return; }
+  seriesTimer = setTimeout(finishSeries, SERIES_END_SILENCE * 1000);
+  $('recStatus').textContent = seriesStatus();
 }
 
 async function refreshSamples() {
@@ -537,6 +579,16 @@ function playbackGain() {
   return Math.min(0.8 / maxPeak, 100);
 }
 
+// random round-robin: never the same take twice in a row, so repeated notes don't sound like a machine gun
+const lastPicked = new Map();  // kind -> sample id
+function pickSample(pool) {
+  const kind = pool[0].kind;
+  const choices = pool.length > 1 ? pool.filter(s => s.id !== lastPicked.get(kind)) : pool;
+  const s = choices[Math.floor(Math.random() * choices.length)];
+  lastPicked.set(kind, s.id);
+  return s;
+}
+
 function playSample(s, t) {
   let buf = buffers.get(s.id);
   if (!buf) {
@@ -575,7 +627,7 @@ $('playPhraseBtn').onclick = async () => {
     for (let i = 0; i < STICKING.length; i++, n++) {
       const pool = ACCENTS.includes(i) ? acc : soft;
       const t = t0 + n * step;
-      playSample(pool[n % pool.length], t);
+      playSample(pickSample(pool), t);
       const delay = (t - ctx.currentTime + (ctx.outputLatency || 0)) * 1000;
       setTimeout(() => {
         [...spans].forEach((s, k) => s.classList.toggle('now', k === i));

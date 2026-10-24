@@ -52,7 +52,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
       if (m.capture !== undefined) {
         // stays armed for a whole series; disarming drops a capture in progress (the click that stopped it)
         this.captureArmed = m.capture;
-        this.captureFrom = currentFrame + Math.round(CAPTURE_ARM_DELAY * sampleRate);
+        this.captureFrom = currentFrame + Math.round((m.armDelay ?? CAPTURE_ARM_DELAY) * sampleRate);
         if (!m.capture) this.capture = null;
       }
     };
