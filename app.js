@@ -126,7 +126,7 @@ function onWorkletMessage(e) {
     $('hitCount').textContent = hitCount;
     drawBars();
     onCalibrationHit(m.time);
-    onSeriesHit();
+    onSeriesHit(m.db);
   } else if (m.type === 'capture') {
     onCapture(m);
   }
@@ -429,11 +429,21 @@ const SERIES_MAX = 16;         // hard stop
 const SERIES_KEEP = 8;         // samples kept per kind
 const OUTLIER_DB = 6;          // hits further than this from the series median are dropped
 const SERIES_IDLE = 10;        // seconds with no hit at all before giving up
+const SERIES_GATE_DB = 20;     // hits this much quieter than the loudest one so far are room noise, not the pad
 let series = [];               // trimmed captures of the current series
-let seriesHits = 0;            // hits heard in the current series (captured or not)
+let seriesHits = 0;            // pad hits heard in the current series (captured or not)
+let seriesTopDb = -Infinity;   // loudest hit of the current series
 let seriesLive = false;        // countdown is over, hits count
 let seriesTimer = null;
 let countdownTimer = null;
+
+// recording state as a coloured plate: wait (amber), go (green), done, warn
+function setRec(state, html) {
+  $('recStatus').className = 'result rec' + (state ? ' rec-' + state : '');
+  $('recStatus').innerHTML = html;
+}
+
+const isPadHit = db => db >= seriesTopDb - SERIES_GATE_DB;
 
 // finish once the pad has been silent for a while; with no hits at all, give up after SERIES_IDLE
 function scheduleSeriesEnd(sec) {
@@ -441,12 +451,13 @@ function scheduleSeriesEnd(sec) {
   seriesTimer = setTimeout(finishSeries, sec * 1000);
 }
 
-function onSeriesHit() {
-  if (!captureKind || !seriesLive) return;
+function onSeriesHit(db) {
+  if (!captureKind || !seriesLive || !isPadHit(db)) return;
+  seriesTopDb = Math.max(seriesTopDb, db);
   seriesHits++;
   // +0.5 s so the last hit's capture (posted ~0.45 s after onset) is in before finishing
   scheduleSeriesEnd(SERIES_END_SILENCE + 0.5);
-  $('recStatus').textContent = seriesStatus();
+  showSeries();
 }
 
 function updateRecButtons() {
@@ -456,10 +467,12 @@ function updateRecButtons() {
   $('recAccentBtn').textContent = captureKind === 'accent' ? '✕ Скасувати' : '● Серія акцентів';
 }
 
-function seriesStatus() {
+function showSeries() {
   const what = captureKind === 'soft' ? 'ТИХІ удари' : 'АКЦЕНТИ';
-  const tail = seriesHits ? `Почув: ${seriesHits}, записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.` : '';
-  return `Грай ${what} по одному, приблизно раз на секунду. ${tail}`;
+  const tail = seriesHits
+    ? `Почув: ${seriesHits}, записано: ${series.length}. Зупинись, і за ${SERIES_END_SILENCE} с запис завершиться.`
+    : 'По одному, приблизно раз на секунду.';
+  setRec('go', `<b>Грай ${what}</b><span class="small">${tail}</span>`);
 }
 
 function endSeries() {
@@ -473,26 +486,27 @@ function endSeries() {
 }
 
 function armCapture(kind) {
-  if (!running()) { $('recStatus').textContent = 'Спочатку натисни «Старт».'; return; }
+  if (!running()) { setRec('warn', 'Спочатку натисни «Старт».'); return; }
   if (captureKind) {                       // pressing again cancels; old samples stay
     endSeries();
-    $('recStatus').textContent = 'Скасовано, старі записи лишились.';
+    setRec('', 'Скасовано, старі записи лишились.');
     return;
   }
   captureKind = kind;
   series = [];
   seriesHits = 0;
+  seriesTopDb = -Infinity;
   node.port.postMessage({ capture: true, armDelay: SERIES_COUNTDOWN });
   updateRecButtons();
   let left = SERIES_COUNTDOWN;
-  $('recStatus').textContent = `Приготуйся… ${left}`;
+  setRec('wait', `<b>Приготуйся… ${left}</b><span class="small">Ще не грай.</span>`);
   countdownTimer = setInterval(() => {
-    if (--left > 0) { $('recStatus').textContent = `Приготуйся… ${left}`; return; }
+    if (--left > 0) { setRec('wait', `<b>Приготуйся… ${left}</b><span class="small">Ще не грай.</span>`); return; }
     clearInterval(countdownTimer);
     countdownTimer = null;
     seriesLive = true;
     scheduleSeriesEnd(SERIES_IDLE);
-    $('recStatus').textContent = seriesStatus();
+    showSeries();
   }, 1000);
 }
 
@@ -510,25 +524,27 @@ async function finishSeries() {
   const kind = captureKind;
   const heard = seriesHits;
   endSeries();
-  if (!series.length) {
-    $('recStatus').textContent = heard
+  // captures made before louder hits raised the gate may still be noise
+  const padOnly = series.filter(s => isPadHit(toDb(s.peak)));
+  series = [];
+  if (!padOnly.length) {
+    setRec('warn', heard
       ? `Почув ${heard} ударів, але жоден не записався. Спробуй ще раз, трохи повільніше.`
-      : 'Не почув жодного удару. Глянь на рівень зліва: удари мають підніматися над червоною лінією порогу.';
+      : 'Не почув жодного удару. Глянь на рівень зліва: удари мають підніматися над червоною лінією порогу.');
     return;
   }
-  const kept = pickConsistent(series);
+  const kept = pickConsistent(padOnly);
   try {
     for (const s of samples.filter(s => s.kind === kind)) { await deleteSample(s.id); buffers.delete(s.id); }
     for (const s of kept) await addSample({ kind, ...s, created: Date.now() });
     await refreshSamples();
   } catch (e) {
-    $('recStatus').textContent = 'Не вдалося зберегти записи: ' + (e.message || e.name);
+    setRec('warn', 'Не вдалося зберегти записи: ' + (e.message || e.name));
     return;
   }
-  const dropped = series.length - kept.length;
-  $('recStatus').innerHTML = `<span class="ok">Все, записано! ${kept.length} ${kind === 'soft' ? 'тихих' : 'акцентів'} у бібліотеці.</span>` +
-    (dropped ? ` <span class="muted small">${dropped} відкинув: випадали за гучністю або зайві.</span>` : '');
-  series = [];
+  const dropped = padOnly.length - kept.length;
+  setRec('done', `<b>✓ Все, записано!</b><span class="small">${kept.length} ${kind === 'soft' ? 'тихих' : 'акцентів'} у бібліотеці.` +
+    (dropped ? ` ${dropped} відкинув: випадали за гучністю або зайві.` : '') + '</span>');
 }
 $('recSoftBtn').onclick = () => armCapture('soft');
 $('recAccentBtn').onclick = () => armCapture('accent');
@@ -560,9 +576,10 @@ function trimCapture(data, onsetIndex, sr) {
 function onCapture(m) {
   if (!captureKind) return;
   const { data, peak } = trimCapture(m.data, m.onsetIndex, m.sampleRate);
+  if (!isPadHit(toDb(peak))) return;
   series.push({ sampleRate: m.sampleRate, data, peak });
   if (series.length >= SERIES_MAX) { finishSeries(); return; }
-  $('recStatus').textContent = seriesStatus();
+  showSeries();
 }
 
 async function refreshSamples() {
