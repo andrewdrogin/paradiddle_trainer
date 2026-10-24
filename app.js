@@ -34,7 +34,7 @@ async function ensureCtx() {
   if (!ctx) {
     ctx = new AudioContext({ latencyHint: 'interactive' });
     // bump when onset-worklet.js changes: worklet modules can outlive a hard reload in the cache
-    await ctx.audioWorklet.addModule('onset-worklet.js?v=4');
+    await ctx.audioWorklet.addModule('onset-worklet.js?v=5');
   }
   if (ctx.state !== 'running') await ctx.resume();
   return ctx;
@@ -552,25 +552,25 @@ async function finishSeries() {
 $('recSoftBtn').onclick = () => armCapture('soft');
 $('recAccentBtn').onclick = () => armCapture('accent');
 
-// cut the capture to [just before onset, tail down to -40 dB or the next hit], with short fades
-function trimCapture(data, onsetIndex, sr) {
+// cut the capture to [just before onset, tail down to -40 dB or the next detected hit], with fades.
+// The next hit comes from the detector: guessing it from a level rise here mistook the beating in
+// the mesh pad's ring-out for a new hit and cut samples to 50 ms.
+function trimCapture(data, onsetIndex, nextIndex, sr) {
   const maxAbs = (a, b) => { let m = 0; for (let i = a; i < b; i++) m = Math.max(m, Math.abs(data[i])); return m; };
   const peak = maxAbs(onsetIndex, Math.min(data.length, onsetIndex + Math.round(0.02 * sr)));
   let start = onsetIndex;
   for (let i = 0; i < onsetIndex; i++) if (Math.abs(data[i]) > peak * 0.1) { start = i; break; }
   start = Math.max(0, start - Math.round(0.001 * sr));
 
-  const win = Math.round(0.002 * sr);
-  let end = data.length;
-  let prev = peak;
-  for (let i = onsetIndex + Math.round(0.02 * sr); i + win <= data.length; i += win) {
-    const m = maxAbs(i, i + win);
-    if (m < peak * 0.01 || (m > prev * 2 && m > peak * 0.05)) { end = i; break; }
-    prev = Math.min(prev, m);
+  const limit = nextIndex > onsetIndex ? nextIndex - Math.round(0.003 * sr) : data.length;
+  const win = Math.round(0.02 * sr);   // long enough to step over the nulls of the ring's beating
+  let end = limit;
+  for (let i = onsetIndex + Math.round(0.02 * sr); i + win <= limit; i += win) {
+    if (maxAbs(i, i + win) < peak * 0.01) { end = i + win; break; }
   }
-  end = Math.min(data.length, Math.max(end + Math.round(0.01 * sr), start + Math.round(0.05 * sr)));
+  end = Math.min(limit, Math.max(end, start + Math.round(0.05 * sr)));
   const out = data.slice(start, end);
-  const fadeIn = Math.round(0.0005 * sr), fadeOut = Math.min(Math.round(0.005 * sr), out.length >> 1);
+  const fadeIn = Math.round(0.0005 * sr), fadeOut = Math.min(Math.round(0.03 * sr), out.length >> 1);
   for (let i = 0; i < fadeIn; i++) out[i] *= i / fadeIn;
   for (let i = 0; i < fadeOut; i++) out[out.length - 1 - i] *= i / fadeOut;
   return { data: out, peak };
@@ -578,7 +578,7 @@ function trimCapture(data, onsetIndex, sr) {
 
 function onCapture(m) {
   if (!captureKind) return;
-  const { data, peak } = trimCapture(m.data, m.onsetIndex, m.sampleRate);
+  const { data, peak } = trimCapture(m.data, m.onsetIndex, m.nextIndex, m.sampleRate);
   if (!isPadHit(toDb(peak))) return;
   series.push({ sampleRate: m.sampleRate, data, peak });
   if (series.length >= SERIES_MAX) { finishSeries(); return; }

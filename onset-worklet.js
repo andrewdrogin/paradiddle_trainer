@@ -110,6 +110,8 @@ class OnsetProcessor extends AudioWorkletProcessor {
           this.fast > past * RISE_RATIO && frame - this.lastOnset > this.guardFrames) {
         this.lastOnset = frame;
         this.measure = { frame, peak: 0, end: frame + Math.round(PEAK_WINDOW * sampleRate) };
+        // captures still recording end where this hit starts
+        for (const c of this.captures) if (c.next === undefined) c.next = frame;
         if (this.captureArmed && frame >= this.captureFrom) {
           this.captures.push({
             onset: frame,
@@ -131,7 +133,10 @@ class OnsetProcessor extends AudioWorkletProcessor {
         const c = this.captures.shift();
         const out = new Float32Array(c.end - c.start);
         for (let k = 0; k < out.length; k++) out[k] = this.ring[(c.start + k) % ringLen];
-        this.port.postMessage({ type: 'capture', data: out, onsetIndex: c.onset - c.start, sampleRate }, [out.buffer]);
+        this.port.postMessage({
+          type: 'capture', data: out, onsetIndex: c.onset - c.start,
+          nextIndex: c.next === undefined ? -1 : c.next - c.start, sampleRate,
+        }, [out.buffer]);
       }
     }
 
