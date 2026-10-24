@@ -7,7 +7,7 @@
 import * as E from './engine.js';
 import { createCorgi } from './corgi.js';
 import {
-  STEPS, LEVELS, WARMUP, STRICTNESS, TEMPOS, notesOf, stepPhrase, canMirror, noteGap, grade, handBalance,
+  STEPS, LEVELS, WARMUP, STRICTNESS, TEMPOS, notesOf, stepPhrase, canMirror, noteGap, grade, rankOf, handBalance,
   loadProgress, saveProgress, recordAttempt, reviewSteps,
 } from './course.js';
 
@@ -117,7 +117,7 @@ function setStage(name) {
 }
 
 function showStreak() {
-  $('streak').textContent = streak >= 2 ? `🔥 ${streak} поспіль` : '';
+  $('streak').textContent = streak >= 2 ? `x${streak} КОМБО` : '';
   document.body.classList.toggle('fever', streak >= 4);
 }
 
@@ -168,6 +168,8 @@ function flash(i, cls, ms = 160) {
 }
 
 function clearMarks() {
+  $('rank').className = 'rank';
+  $('rank').textContent = '';
   $('grid').querySelectorAll('.note').forEach(el => el.classList.remove('ok', 'early', 'late', 'miss', 'weak', 'heard'));
   $('grid').querySelectorAll('.mark').forEach(el => { el.textContent = ''; el.className = 'mark'; });
   $('grid').querySelectorAll('.vel i').forEach(el => { el.style.height = '0'; el.className = ''; });
@@ -269,6 +271,17 @@ let lastBeat = -1;
 function startBeat(t0, period, strokes) { beat = { t0, period, strokes }; lastBeat = -1; }
 function stopBeat() { beat = null; }
 
+// the whole screen gives a small bump on the beats, a bigger one on "1" (Hi-Fi Rush style)
+let thumpTimer = null;
+function thump(strong) {
+  const b = document.body;
+  b.classList.remove('thump', 'thump-1');
+  void b.offsetWidth;
+  b.classList.add(strong ? 'thump-1' : 'thump');
+  clearTimeout(thumpTimer);
+  thumpTimer = setTimeout(() => b.classList.remove('thump', 'thump-1'), 110);
+}
+
 // pulse for eighth k: 'strong' on "1", 'beat' on 2/3/4, 'half' on an "і" with a stroke, else none
 export function pulseKind(k, strokes) {
   if (k % 8 === 0) return 'strong';
@@ -289,6 +302,7 @@ export function pulseKind(k, strokes) {
         void frame.offsetWidth;
         frame.className = 'pulse ' + kind;
         if (kind !== 'half' && phase !== 'listen') corgi.beat(kind === 'strong');
+        if (kind !== 'half') thump(kind === 'strong');
         const c = countEl(k % 8);
         if (c && phase !== 'result' && phase !== 'hold') {
           $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
@@ -546,16 +560,54 @@ function onHit(h) {
   popHit(h);
 }
 
-// instant feedback on the note this hit belongs to: perfect / good / off
+// instant feedback on the note this hit belongs to: perfect / good / off. Judged on the player's own
+// pulse, like the final grade: each gap against the typical gap so far (the target's while there's
+// only one), so steady playing a bit off the metronome still pops bright.
 function popHit(h) {
-  const gap = noteGap(phrase.bpm);
-  const rel = (h.time - hits[0].time) / gap;
-  const i = Math.round(rel);
-  if (i < 0 || i >= phrase.notes.length) return;
-  const dev = Math.abs(rel - i);
+  const i = hits.length - 1;
+  if (i >= phrase.notes.length) return;
+  let dev = 0;
+  if (i > 0) {
+    const target = noteGap(phrase.bpm), free = STRICTNESS[prefs.strict].tempoFree;
+    const gaps = hits.slice(1, -1).map((x, k) => x.time - hits[k].time).sort((a, b) => a - b);
+    const typical = gaps.length ? gaps[gaps.length >> 1] : target;
+    const ref = Math.min(target * (1 + free), Math.max(target * (1 - free), typical));
+    dev = Math.abs(h.time - hits[i - 1].time - ref) / ref;
+  }
   const q = dev <= PERFECT ? 'pop-perfect' : dev <= STRICTNESS[prefs.strict].window / 2 ? 'pop-good' : 'pop-off';
   noteEl(i)?.classList.add('heard');
   flash(i, q, 450);
+  word(i, q);
+}
+
+// comic onomatopoeia over the note: "ТУК!" on the beat, "БАХ!" for an accent, a small "тук" when off
+function word(i, q) {
+  const slot = noteEl(i)?.parentElement;
+  if (!slot) return;
+  const accent = phrase.notes[i].accent;
+  const w = document.createElement('span');
+  w.className = 'word ' + q.replace('pop-', '') + (accent ? ' acc' : '');
+  w.textContent = q === 'pop-off' ? 'тук' : accent ? 'БАХ!' : q === 'pop-perfect' ? 'ТУК!' : 'тук!';
+  w.style.setProperty('--tilt', `${Math.round(Math.random() * 24 - 12)}deg`);
+  slot.append(w);
+  setTimeout(() => w.remove(), 700);
+}
+
+// the take's rank as a big comic letter, plus what it is made of
+const RANK_SAYS = { S: 'Стильно!', A: 'Круто!', B: 'Добре', C: 'Ти близько', D: 'Ще раз' };
+function showRank(rk) {
+  const el = $('rank');
+  el.textContent = rk.rank;
+  el.className = 'rank';
+  void el.offsetWidth;
+  el.className = 'rank show r-' + rk.rank;
+  stats.ranks[rk.rank] = (stats.ranks[rk.rank] || 0) + 1;
+}
+
+function scoreBars(rk) {
+  const bar = (label, v) => (v === null ? '' :
+    `<span class="bar"><em>${label}</em><i><u style="width:${Math.round(v * 100)}%"></u></i></span>`);
+  return `<span class="bars">${bar('Таймінг', rk.timing)}${bar('Акценти', rk.accents)}${bar('Руки', rk.hands)}</span>`;
 }
 
 function finish() {
@@ -565,11 +617,16 @@ function finish() {
   // warm-up and the final phrase are judged softly: "more or less" is enough there
   const r = grade(phrase, hits, stage === 'warmup' || stage === 'finish' ? 'soft' : prefs.strict);
   showResult(r);
+  const rk = rankOf(phrase, r);
   const { msg, accepted, summary } = stepHelp(r);
-  corgi.mood(accepted || summary ? 'happy' : 'cheer');
+  corgi.mood(rk.rank === 'S' || rk.rank === 'A' ? 'happy' : accepted || summary ? '' : 'cheer');
   showStreak();
   renderMap();
   if (summary) return;
+  showRank(rk);
+  const title = $('plate').querySelector('b');
+  title.textContent = `${rk.rank} · ${title.textContent === 'Чисто! ✓' ? RANK_SAYS[rk.rank] : title.textContent}`;
+  $('plate').insertAdjacentHTML('beforeend', scoreBars(rk));
 
   lastTake = hits.length ? { hits, key: phraseKey() } : null;
   $('replayBtn').disabled = !lastTake;
@@ -694,8 +751,9 @@ function showSummary() {
   phase = 'idle';
   const mins = Math.max(1, Math.round((Date.now() - stats.startMs) / 60000));
   const step = STEPS[progress.current], st = progress.steps[step.id];
+  const ranks = 'SABCD'.split('').filter(k => stats.ranks[k]).map(k => `${k}×${stats.ranks[k]}`).join(' ');
   const lines = [
-    `${stats.accepted} фраз зараховано за ${mins} хв · найкраща серія ${stats.best}`,
+    `${stats.accepted} фраз зараховано за ${mins} хв · найкраще комбо ${stats.best}` + (ranks ? ` · ранги ${ranks}` : ''),
     `${lessonNo(progress.current)}: ${step.title}, зараз ${TEMPOS[st.t]} BPM` +
       (progress.current !== stats.startStep || st.t !== stats.startTempo ? ' (рух уперед! 🎉)' : ''),
   ];
@@ -804,7 +862,7 @@ async function start() {
     if (!progress.days.includes(today())) progress.days = [...progress.days, today()].slice(-60);
     saveProgress(progress);
     streak = 0;
-    stats = { accepted: 0, best: 0, startMs: Date.now(), startStep: progress.current, startTempo: progress.steps[STEPS[progress.current].id].t };
+    stats = { accepted: 0, best: 0, ranks: {}, startMs: Date.now(), startStep: progress.current, startTempo: progress.steps[STEPS[progress.current].id].t };
     later(startCheck, kit ? 300 : 2500);
   } else if (stage === 'check') {
     later(startCheck, 300);

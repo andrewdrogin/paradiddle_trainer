@@ -181,6 +181,45 @@ export function grade(phrase, hits, strictness) {
   return { clean, onTarget, notes, extra, hint, tempoRatio, playedBpm };
 }
 
+// Style rank for one take, D..S, from three 0..1 scores (null = doesn't apply to this phrase):
+// timing (how close each note sat to its place; a missing note scores 0), accents (how far the
+// accents rose above the taps, full marks at +12 dB, a clear high/low stick height) and hands (left
+// and right taps equally loud). The same scale at any strictness, so S always means the same; a
+// take that isn't clean never ranks above C: "again, you're close".
+const RANKS = [['S', 0.92], ['A', 0.8], ['B', 0.65], ['C', 0.45], ['D', -1]];
+const WEIGHTS = { timing: 0.6, accents: 0.25, hands: 0.15 };
+const RANK_TIMING = 0.2;   // a note this far off its place (share of the gap) scores 0
+const RANK_ACCENT_DB = 12;
+
+export function rankOf(phrase, r) {
+  const clamp = v => Math.min(1, Math.max(0, v));
+  const timing = mean(r.notes.map(n => (n.dev === undefined ? 0 : clamp(1 - Math.abs(n.dev) / RANK_TIMING))));
+
+  let accents = null;
+  const accDbs = r.notes.filter((n, i) => phrase.notes[i].accent && n.db !== undefined).map(n => n.db);
+  const tapDbs = r.notes.filter((n, i) => !phrase.notes[i].accent && n.db !== undefined).map(n => n.db);
+  if (phrase.notes.some(n => n.accent)) {
+    accents = accDbs.length && tapDbs.length ? clamp((median(accDbs) - median(tapDbs)) / RANK_ACCENT_DB) : 0;
+  }
+
+  let hands = null;
+  const amp = db => 10 ** (db / 20);
+  const by = { R: [], L: [] };
+  r.notes.forEach((n, i) => { if (n.db !== undefined && !phrase.notes[i].accent) by[phrase.notes[i].hand].push(amp(n.db)); });
+  if (by.R.length && by.L.length) {
+    const ratio = mean(by.L) / mean(by.R);
+    hands = clamp(1 - (1 - Math.min(ratio, 1 / ratio)) * 1.25);
+  }
+
+  const parts = { timing, accents, hands };
+  let sum = 0, wsum = 0;
+  for (const [k, w] of Object.entries(WEIGHTS)) if (parts[k] !== null) { sum += parts[k] * w; wsum += w; }
+  const score = sum / wsum;
+  let rank = RANKS.find(([, min]) => score >= min)[0];
+  if (!r.clean && 'SAB'.includes(rank)) rank = 'C';
+  return { rank, score, ...parts };
+}
+
 // left vs right loudness across warm-up phrases, as "left = N % of right"; null if one hand is missing
 export function handBalance(takes) {
   const amp = db => 10 ** (db / 20);

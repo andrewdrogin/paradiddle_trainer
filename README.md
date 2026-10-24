@@ -4,7 +4,7 @@ Personal rudiment trainer in "echo" style (phone plays a sticking phrase, you re
 
 **Echo trainer** (`index.html`, `trainer.js`): the app plays a phrase, waits patiently for you, you echo it on the pad, every note gets a mark.
 
-Look: a rhythm-action comic in the spirit of Hi-Fi Rush / Persona / Patapon (`trainer.css`): cream paper, black ink, thick outlines, slanted plates, Dela Gothic One + Manrope. A corgi drummer partner (`corgi.js`, placeholder art) plays the phrase stick by stick in mirror view, nods on the beat and reacts to the result. Screens: Today (lesson + start), Play, My path, Settings.
+Look: a rhythm-action comic in the spirit of Hi-Fi Rush / Persona / Patapon (`trainer.css`): cream paper, black ink, thick outlines, slanted plates, Dela Gothic One + Manrope. A corgi drummer partner (`corgi.js`, placeholder art) plays the phrase stick by stick in mirror view, nods on the beat and reacts to the result. Screens: Today (lesson + start), Play, My path, Settings. Every take gets a style rank D–S (`rankOf` in `course.js`: timing 60 %, accents 25 %, hands 15 %; not clean → at most C) with its three bars; hits pop comic words (ТУК! / БАХ! / тук) judged on your own pulse; the whole play screen bumps on the beat; clean takes in a row count as a combo.
 
 - Session, short (~10 min, default) or full (~20): sound check once a day → warm-up (mandatory, judged softly, ends with left/right balance) → review of passed lessons → the current lesson until a goal (6/12 accepted phrases or 5/10 min) → an easy final phrase → summary with "more" / "finish"
 - In "new": every 3rd lesson phrase led by the other hand, a known phrase after every 3 lesson phrases, a lesson stuck for 8 attempts is parked for 2 known phrases

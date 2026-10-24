@@ -303,3 +303,58 @@ body.fever #beatFrame.pulse:not(.half) { animation-name: beat-fever; }
   .cta { padding: 12px 20px; font-size: 17px; }
   .tabs { padding: 4px 12px; }
 }
+
+/* ---------- rank, hit words, screen thump ---------- */
+
+.play-bottom { position: relative; }
+.rank {
+  position: absolute; right: 54px; bottom: calc(100% - 64px); z-index: 4; pointer-events: none;
+  font: 400 clamp(56px, 11vw, 110px)/1 var(--display);
+  -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill;
+  color: var(--paper); opacity: 0; transform: rotate(-8deg);
+}
+.rank.show { opacity: 1; animation: rank-in .35s cubic-bezier(.2, 1.6, .4, 1); }
+.rank.r-S { color: var(--yellow); text-shadow: 6px 6px 0 var(--red); }
+.rank.r-A { color: var(--yellow); }
+.rank.r-B { color: var(--paper); }
+.rank.r-C, .rank.r-D { color: #fff; text-shadow: 5px 5px 0 var(--left); }
+@keyframes rank-in { from { opacity: 0; transform: scale(2.4) rotate(-20deg); } to { opacity: 1; transform: scale(1) rotate(-8deg); } }
+
+.grid .slot { position: relative; }
+.word {
+  position: absolute; left: 50%; top: 0; z-index: 3; pointer-events: none; white-space: nowrap;
+  font: 400 15px/1 var(--display); color: var(--ink);
+  transform: translate(-50%, -30%) rotate(var(--tilt, 0deg));
+  animation: word-up .65s ease-out forwards;
+}
+.word.perfect { font-size: 20px; color: var(--ink); -webkit-text-stroke: 1px var(--paper); }
+.word.acc { font-size: 24px; color: var(--red); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+.word.good { font-size: 15px; color: var(--ok); }
+.word.off { font-size: 12px; color: var(--muted); }
+@keyframes word-up {
+  0% { opacity: 0; transform: translate(-50%, 10%) rotate(var(--tilt)) scale(.6); }
+  20% { opacity: 1; transform: translate(-50%, -40%) rotate(var(--tilt)) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -110%) rotate(var(--tilt)) scale(1); }
+}
+
+/* what the rank is made of, inside the banner */
+.plate .bars { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; opacity: 1; }
+.plate .bar { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; }
+.plate .bar em { font-style: normal; }
+.plate .bar i { width: 64px; height: 8px; border: 2px solid currentColor; border-radius: 4px; overflow: hidden; display: inline-block; }
+.plate .bar u { display: block; height: 100%; background: currentColor; }
+
+/* the whole screen bumps on the beat */
+#play .slant, #play .plate, #play .grid, #play .combo { transition: transform .1s ease-out; }
+body.thump #play .slant, body.thump #play .combo { transform: translateY(-2px); }
+body.thump #play .grid { transform: scale(1.006); }
+body.thump-1 #play .slant, body.thump-1 #play .combo { transform: translateY(-4px) rotate(-1deg); }
+body.thump-1 #play .grid { transform: scale(1.012); }
+body.thump-1 #play .plate { transform: translateX(3px); }
+body.thump::before, body.thump-1::before { background-position: 2px 2px; }
+
+@media (max-height: 500px) {
+  .rank { font-size: 56px; -webkit-text-stroke-width: 3px; bottom: calc(100% - 34px); right: 40px; }
+  .plate .bars { gap: 10px; margin-top: 2px; }
+  .plate .bar i { width: 44px; height: 6px; }
+}
