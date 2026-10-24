@@ -4,7 +4,10 @@ Personal rudiment trainer in "echo" style (phone plays a sticking phrase, you re
 
 **Echo trainer** (`index.html`, `trainer.js`): the app plays a phrase, waits patiently for you, you echo it on the pad, every note gets a mark.
 
-- Session: sound check → warm-up (mandatory, judged softly, ends with left/right balance) → review of passed steps → the current new step
+- Session, short (~10 min, default) or full (~20): sound check once a day → warm-up (mandatory, judged softly, ends with left/right balance) → review of passed lessons → the current lesson until a goal (6/12 accepted phrases or 5/10 min) → an easy final phrase → summary with "more" / "finish"
+- In "new": every 3rd lesson phrase led by the other hand, a known phrase after every 3 lesson phrases, a lesson stuck for 8 attempts is parked for 2 known phrases
+- After a miss the result stays with a note-by-note explanation until a pad tap or "Далі"
+- Lessons map: the 9 beginner lessons with tempo progress, then locked intermediate and pro lessons
 - Phrase as dots: right hand on top, left below, accents big; timing judged from your own first hit, so latency doesn't count
 - Ladder of 9 steps (`course.js`): right, left, change, singles, accent/tap, accented singles, doubles, paradiddle, accented paradiddle; 60→96 BPM eighths, tempo rises by itself after 3 clean of 5
 - Help ladder when a phrase doesn't come out: again → a tempo step slower → the trouble spot alone in a loop → whole phrase slow → back in tempo; nothing moves on by itself

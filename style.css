@@ -249,3 +249,25 @@ body.fever #beatFrame.pulse:not(.half) { animation-name: beat-fever; }
 @media (max-height: 500px) {
   .grid .vel { height: 14px; }
 }
+
+/* trouble spot: a label above and a divider between the two passes */
+.grid-label { min-height: 1.3em; margin-top: 8px; color: var(--accent); font-weight: 700; }
+.grid-label:empty { display: none; }
+.grid .loop-start { border-left: 2px dashed var(--accent); }
+
+.rec .hold { margin-top: 4px; opacity: .85; }
+.rec .row { margin-top: 8px; }
+
+/* lessons map */
+.map { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.map .level { margin: 10px 0 2px; }
+.map .level.locked { opacity: .6; }
+.lesson { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+.lesson .no { width: 3em; flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lesson .grow { flex: 1; min-width: 0; }
+.lesson.current { background: rgba(47, 128, 237, .15); outline: 1px solid var(--primary); }
+.lesson.current .no { color: var(--text); }
+.lesson.passed .no { color: var(--ok); }
+.lesson.ahead, .lesson.locked { opacity: .55; }
+.lesson .tempo { width: 70px; height: 6px; background: #0d1014; border-radius: 3px; overflow: hidden; flex: none; }
+.lesson .tempo i { display: block; height: 100%; background: var(--ok); }

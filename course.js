@@ -16,7 +16,25 @@ export const STEPS = [
   { id: 'paradiddle-acc', title: 'Парадідл з акцентом', sticking: 'RLRRLRLL', accents: [0, 4], short: false, unlock: 2, max: 4 },
 ];
 
-// warm-up is not graded: every phrase is played once, whatever comes out
+// Every step is a lesson. Beyond the ladder, the map shows what comes next (locked for now), so
+// the way from beginner to intermediate is visible.
+export const LEVELS = [
+  { title: 'Початківець', lessons: STEPS.map(s => s.title), note: 'вісімки 60→96, рівні руки, чіткі акценти' },
+  {
+    title: 'Середній',
+    lessons: ['Інверсії парадідла', 'Подвійний парадідл', 'Парадідл-дідл', 'Парадідл шістнадцятими 60→100', 'Акцент на будь-якій ноті'],
+    note: 'шістнадцяті 100–120 рівно, дві висоти палички',
+    locked: true,
+  },
+  {
+    title: 'Профі',
+    lessons: ['Привидні ноти і динаміка', 'Парадідл у грув', 'Шістнадцяті 140+ без напруги'],
+    note: 'будь-який темп і гучність без напруги',
+    locked: true,
+  },
+];
+
+// warm-up is judged softly: "more or less" is enough there
 export const WARMUP = [
   { title: 'Права рука', sticking: 'RRRRRRRR', accents: [], bpm: 60 },
   { title: 'Ліва рука', sticking: 'LLLLLLLL', accents: [], bpm: 60 },
@@ -38,10 +56,19 @@ export const STRICTNESS = {
 export const notesOf = (sticking, accents) =>
   [...sticking].map((hand, i) => ({ hand, accent: accents.includes(i) }));
 
-export function stepPhrase(step, st) {
+// mirror: the same exercise led by the other hand (R↔L), so the left gets equal work
+export function stepPhrase(step, st, { mirror = false, slower = 0 } = {}) {
   const len = st.len === 'short' ? 4 : 8;
-  return { title: step.title, notes: notesOf(step.sticking.slice(0, len), step.accents), bpm: TEMPOS[st.t] };
+  let sticking = step.sticking.slice(0, len);
+  if (mirror) sticking = [...sticking].map(h => (h === 'R' ? 'L' : 'R')).join('');
+  return {
+    title: step.title + (mirror ? ' з лівої' : ''),
+    notes: notesOf(sticking, step.accents),
+    bpm: TEMPOS[Math.max(0, st.t - slower)],
+  };
 }
+
+export const canMirror = step => step.sticking.includes('R') && step.sticking.includes('L');
 
 export const noteGap = bpm => 60 / bpm / 2;
 
@@ -140,7 +167,7 @@ export function grade(phrase, hits, strictness) {
   if (clean) {
     const yours = `твій темп ≈ ${playedBpm}, ціль ${phrase.bpm}`;
     if (creep < 0.9 || creep > 1.1) hint = 'Зараховано! Але темп трохи пливе всередині фрази, тримай рівно';
-    else if (offGrid) hint = offTarget ? `Зараховано! ${yours}` : 'Зараховано! Ще трохи рівніше, і буде ідеально';
+    else if (offGrid) hint = offTarget ? `Зараховано! Т${yours.slice(1)}` : 'Зараховано! Ще трохи рівніше, і буде ідеально';
     else if (!offTarget) hint = 'Чисто! ✓';
     else hint = `Рівно! ✓ Т${yours.slice(1)}, ${tempoRatio > 1 ? 'поступово підтягуй' : 'можна спокійніше'}`;
   } else if (creep < 0.9) hint = 'Розганяєшся всередині фрази, тримай рівно 🙂';

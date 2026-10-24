@@ -15,6 +15,7 @@
       <span data-stage="warmup">Розминка</span>
       <span data-stage="review">Повторення</span>
       <span data-stage="new">Нове</span>
+      <span data-stage="finish">Фініш</span>
     </nav>
     <span class="muted version">v0.2</span>
   </header>
@@ -32,15 +33,24 @@
         </div>
       </div>
 
+      <div id="gridLabel" class="grid-label"></div>
       <div id="grid" class="grid"></div>
 
       <div id="plate" class="result rec"></div>
 
       <div class="row">
         <button id="againBtn" class="big" disabled>↻ Послухати ще раз</button>
+        <button id="nextBtn" class="big primary" hidden>Далі ▶</button>
         <button id="replayBtn" class="big" disabled>▶ Як я зіграв</button>
         <button id="skipBtn" class="big" disabled>Пропустити</button>
       </div>
+    </section>
+
+    <section class="card">
+      <details id="mapBox">
+        <summary id="mapSummary">Мій шлях</summary>
+        <div id="map" class="map"></div>
+      </details>
     </section>
 
     <section class="card">
@@ -49,6 +59,9 @@
         <div class="settings">
           <label class="inline">Звук
             <select id="kitSelect"><option value="pad">Мій пад</option><option value="snare">Малий барабан</option></select>
+          </label>
+          <label class="inline">Заняття
+            <select id="lengthSelect"></select>
           </label>
           <label class="inline">Оцінка
             <select id="strictSelect"></select>
