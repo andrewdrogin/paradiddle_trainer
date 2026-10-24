@@ -1,7 +1,8 @@
 // Onset (hit) detector running on the audio thread.
 // Times are reported in AudioContext frames, so they share a clock with ctx.currentTime.
 
-const RISE_RATIO = 1.6;      // envelope must jump ~4 dB over its decayed memory to count as a new hit
+const RISE_RATIO = 2.5;      // envelope must grow ~8 dB within RISE_WINDOW to count as a new hit
+const RISE_WINDOW = 0.01;    // seconds: a stick attack gets there in 1-3 ms, voice or handling noise doesn't
 const PEAK_WINDOW = 0.02;    // seconds after onset used to measure hit loudness
 const CAPTURE_PRE = 0.02;    // seconds of audio kept before onset when recording a sample
 const CAPTURE_POST = 0.45;   // seconds kept after onset
@@ -24,9 +25,10 @@ class OnsetProcessor extends AudioWorkletProcessor {
     this.hpY = 0;
 
     this.fast = 0;                                   // peak envelope, ~5 ms release
-    this.ref = 0;                                    // decayed memory, ~20 ms release
     this.fastRel = Math.exp(-1 / (0.005 * sampleRate));
-    this.refRel = Math.exp(-1 / (0.02 * sampleRate));
+    // the envelope RISE_WINDOW ago; comparing against it (not against the envelope itself)
+    // lets smooth real pad hits trigger, not only white-noise-like bursts
+    this.fastHist = new Float32Array(Math.round(RISE_WINDOW * sampleRate));
     this.floorDb = null;                             // adaptive noise floor (block RMS)
     this.floorRise = 6 * 128 / sampleRate;           // dB per block: floor creeps up at 6 dB/s
 
@@ -82,8 +84,11 @@ class OnsetProcessor extends AudioWorkletProcessor {
       if (Math.abs(x) > this.lvlPeak) this.lvlPeak = Math.abs(x);
 
       this.fast = e > this.fast ? e : this.fast * this.fastRel;
+      const hi = frame % this.fastHist.length;
+      const past = this.fastHist[hi];
+      this.fastHist[hi] = this.fast;
 
-      if (!this.measure && frame > this.warmupEnd && this.fast > thr && this.fast > this.ref * RISE_RATIO &&
+      if (!this.measure && frame > this.warmupEnd && this.fast > thr && this.fast > past * RISE_RATIO &&
           frame - this.lastOnset > this.guardFrames) {
         this.lastOnset = frame;
         this.measure = { frame, peak: 0, end: frame + Math.round(PEAK_WINDOW * sampleRate) };
@@ -95,7 +100,6 @@ class OnsetProcessor extends AudioWorkletProcessor {
           };
         }
       }
-      this.ref = Math.max(this.ref * this.refRel, this.fast);
 
       if (this.measure) {
         if (e > this.measure.peak) this.measure.peak = e;
