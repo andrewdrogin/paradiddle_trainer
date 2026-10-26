@@ -753,7 +753,8 @@ function showSummary() {
   const step = STEPS[progress.current], st = progress.steps[step.id];
   const ranks = 'SABCD'.split('').filter(k => stats.ranks[k]).map(k => `${k}×${stats.ranks[k]}`).join(' ');
   const lines = [
-    `${stats.accepted} фраз зараховано за ${mins} хв · найкраще комбо ${stats.best}` + (ranks ? ` · ранги ${ranks}` : ''),
+    `${stats.accepted} фраз зараховано за ${mins} хв` + (ranks ? ` · ранги ${ranks}` : ''),
+    ...(stats.best >= 2 ? [`Найдовша серія: ${stats.best} фраз поспіль вийшли добре`] : []),
     `${lessonNo(progress.current)}: ${step.title}, зараз ${TEMPOS[st.t]} BPM` +
       (progress.current !== stats.startStep || st.t !== stats.startTempo ? ' (рух уперед! 🎉)' : ''),
   ];
