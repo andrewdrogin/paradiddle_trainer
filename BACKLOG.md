@@ -23,6 +23,10 @@ What's agreed but not built yet.
 
 ## Trainer
 
+- **Mastery, not "passed"** — a soft but persistent teacher: move on only when a lesson is really learned, go back when it slips.
+  - Each lesson has a mastery meter 0–100 %, shown in «Мій шлях».
+  - Mastered = at the lesson's target tempo, steadily A/S ranks, even hands (left ≥ ~85 % of right), clear accents, on 2–3 different days. Until then the lesson stays in «Нове».
+  - Every passed lesson has a "form" that fades when it isn't played and is refreshed by review ranks. When the ranks drop (e.g. average below B) the lesson goes back to "needs review": it shows up more in warm-up and review, with an honest note («Одиночні трохи просіли, давай освіжимо»).
+  - If a lesson the current one builds on slips (doubles under the paradiddle), bring it back first, then go on. Never punishing, never "failed".
 - A notation row under the dots.
-- Review by Leitner boxes counted in sessions; a new lesson opens only after reaching the threshold in two different sessions.
 - Intermediate lessons: paradiddle inversions, double paradiddle, paradiddle-diddle (triplets), sixteenths 60→100, accent on any note.
