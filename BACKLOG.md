@@ -2,6 +2,16 @@
 
 What's agreed but not built yet.
 
+## The idea behind all of it
+
+Practising with the trainer should feel like lessons with a great, patient teacher who sees you and mentors you towards mastery. Every feature is checked against this.
+
+- **Sees you**: strong and weak sides from every stroke, your pace of learning, your state today.
+- **Talks to you**: feedback on the stroke, after each phrase, after the session, after the lesson — what worked and what to work on, in plain words, not just numbers.
+- **Adjusts**: plan, exercises, tempo and amount follow you; weak spots get more attention, easy things don't hold you back.
+- **Leads like a mentor**: knows where you're going (mastery, not "the end of the course") and says why each exercise matters.
+- **Patient**: never rushes or scolds, never lets you move on before it's really good.
+
 ## Darcy, the partner
 
 - The corgi is **Darcy** (she), after Andrew's real corgi. Copy: «Дарсі грає фразу», «Дарсі рада», «Дарсі пишається тобою».
