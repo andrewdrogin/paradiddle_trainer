@@ -35,6 +35,11 @@ What's agreed but not built yet.
   - A 3–5 minute mini-session for busy days: short warm-up + one or two of the exercises that slipped. Regular beats long.
   - Answer with the pad, hands stay on it: at the end «Ще 5 хвилин?» — 1 tap finish, 2 taps +5 minutes (wait ~1 s after the first tap for a second one, then confirm on screen). Same tap dialog for the fatigue offer. On-screen buttons stay as a fallback.
   - Later, maybe: free play with Darcy and the metronome, no grading.
+- **Reading the player's state** — a teacher notices a bad day.
+  - Signals, always against the player's own profile, never a norm: warm-up clearly worse than usual (off form from the start); quality sliding after a good start (fatigue); several takes in a row falling apart even after the help ladder (everything slips).
+  - Responses by case: a mild dip → quietly a tempo step down and simpler phrases; off form from the start → offer «Схоже, сьогодні руки не в формі. 5 хвилин спокійних вправ на концентрацію і на цьому все?» — no new material that day, only easy consolidation; fatigue mid-session → finish on an easy phrase. Answered with pad taps (1 = yes, easier; 2 = no, keep going); the player always decides.
+  - Concentration exercises: singles very slow (~50 BPM) listening only for an even sound in both hands; one hand, hit — long pause — hit; everything as quiet and even as possible; a short 2–3 note echo to feel the hits land.
+  - A bad day must not wreck the profile or lessons' form: when the dip is general, not lesson-specific, those takes weigh little in mastery, so one tired evening doesn't push you back.
 - **Report ("зріз")** like a teacher's notes: a short one after every session, a full one when a lesson is mastered — what's good, what's still weak, 2–3 concrete things to watch next, and how timing / hands / accents changed from the first session to the last.
 - A notation row under the dots.
 - Intermediate lessons: paradiddle inversions, double paradiddle, paradiddle-diddle (triplets), sixteenths 60→100, accent on any note.
