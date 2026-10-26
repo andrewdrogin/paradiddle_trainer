@@ -358,3 +358,5 @@ body.thump::before, body.thump-1::before { background-position: 2px 2px; }
   .plate .bars { gap: 10px; margin-top: 2px; }
   .plate .bar i { width: 44px; height: 6px; }
 }
+.home-note { color: var(--ink-2); font-weight: 700; font-size: 14px; max-width: 34em; }
+.home-note:empty { display: none; }

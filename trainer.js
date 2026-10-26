@@ -759,9 +759,14 @@ function showSummary() {
   ];
   const bal = handBalance(warmTakes);
   if (bal) lines.push(`Ліва ≈ ${bal}% від правої за силою удару`);
+  // what the home screen says next time
+  const moved = progress.current !== stats.startStep || st.t !== stats.startTempo;
+  progress.lastNote = `${step.title}, ${TEMPOS[st.t]} BPM` + (moved ? ', рух уперед' : '') +
+    (bal ? `, ліва ≈ ${bal}% правої` : '') + '. Сьогодні продовжимо.';
+  saveProgress(progress);
   $('phraseTitle').textContent = 'Заняття завершено';
   $('bpmPlate').textContent = `${mins} хв`;
-  $('phraseSub').textContent = 'Добра робота. Коротко, але щодня — найкраще.';
+  $('phraseSub').textContent = 'Добра робота. Відпочинь: руки запам\'ятовують і між заняттями.';
   corgi.mood('happy');
   $('grid').innerHTML = '';
   $('gridLabel').textContent = '';
@@ -993,23 +998,13 @@ function showScreen(name) {
 }
 document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => showScreen(b.dataset.go); });
 
-// days in a row up to today (or yesterday, if today isn't played yet)
-function dayStreak() {
-  const set = new Set(progress.days);
-  const d = new Date();
-  if (!set.has(d.toDateString())) d.setDate(d.getDate() - 1);
-  let n = 0;
-  while (set.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
-  return n;
-}
-
 function renderHome() {
   const step = STEPS[progress.current], st = progress.steps[step.id];
   $('homeLesson').textContent = `${lessonNo(progress.current)} · ${step.title}`;
   $('homeMeta').textContent = `${TEMPOS[st.t]} BPM · розминка, повторення, нове і фініш`;
   $('homeLength').textContent = prefs.length === 'full' ? '20 хв' : '10 хв';
-  const days = dayStreak();
-  $('homeDays').textContent = days >= 2 ? `🔥 ${days} дні поспіль` : days === 1 ? 'Вчора грав 👍' : '';
+  // a teacher's note about last time instead of a days-in-a-row counter: no habit pressure
+  $('homeNote').textContent = progress.lastNote ? `Минулого разу: ${progress.lastNote}` : '';
 }
 
 const corgi = createCorgi($('corgiPlay'));

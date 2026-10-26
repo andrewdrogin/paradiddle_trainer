@@ -11,7 +11,7 @@ Practising with the trainer should feel like lessons with a great, patient teach
 - **Adjusts**: plan, exercises, tempo and amount follow you; weak spots get more attention, easy things don't hold you back.
 - **Leads like a mentor**: knows where you're going (mastery, not "the end of the course") and says why each exercise matters.
 - **Patient**: never rushes or scolds, never lets you move on before it's really good.
-- **A good teacher, not Duolingo**: no streak pressure, no guilt ("you'll lose your flame!"), no XP, leagues or nagging notifications. It optimises for you learning, not for you opening the app: praise real progress («ліва нарешті вирівнялась»), pick up where you are after a gap without guilt, don't distract when you need to focus. In-session feedback (ranks, combo, ТУК!) is fine; habit-pressure mechanics aren't. → Replace «🔥 N дні поспіль» on the home screen with a teacher's note like «Минулого разу: парадідл з лівої вирівнявся, сьогодні продовжимо».
+- **A good teacher, not Duolingo**: no streak pressure, no guilt ("you'll lose your flame!"), no XP, leagues or nagging notifications. It optimises for you learning, not for you opening the app: praise real progress («ліва нарешті вирівнялась»), pick up where you are after a gap without guilt, don't distract when you need to focus. In-session feedback (ranks, combo, ТУК!) is fine; habit-pressure mechanics aren't. The days-in-a-row counter is gone; the home screen shows a short note about last time (lesson, tempo, moving on, hand balance). Make that note smarter once the profile exists («ліва нарешті вирівнялась»).
 
 ## Darcy, the partner
 
