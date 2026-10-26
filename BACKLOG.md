@@ -30,6 +30,11 @@ What's agreed but not built yet.
   - Keep accumulating from every note (hand, early/late, loudness) into a skills profile: per hand timing accuracy and rush/drag tendency; evenness of doubles; accent vs tap contrast; tempo stability inside a phrase; the tempo where it starts to fall apart; left/right balance. Mastery is computed from the same profile.
   - The plan adapts to it: a weak spot gets more targeted work (left late → more left-led warm-ups, mirror variants and left-hand review); rushing at higher tempi → longer at the current tempo; easy things → fewer repetitions and moving on sooner; hard things → smaller steps, more time, back to the basics underneath.
 - **Everyone's pace is different**: mastery is judged by quality, never by time (3 sessions or 15 — both fine); tempo steps adapt (wider when it's easy, +2–4 BPM when it's hard); the amount of repetition adapts; no deadlines, no "normal pace", no comparison with others — reports compare you only with your own earlier sessions.
+- **Sessions**: 10 minutes stays the default.
+  - Stop on a good note when tired: if quality drops inside a session (ranks sliding A → C, a hand starting to lag), offer to finish on an easy phrase — tired practice trains the mistakes in.
+  - A 3–5 minute mini-session for busy days: short warm-up + one or two of the exercises that slipped. Regular beats long.
+  - Answer with the pad, hands stay on it: at the end «Ще 5 хвилин?» — 1 tap finish, 2 taps +5 minutes (wait ~1 s after the first tap for a second one, then confirm on screen). Same tap dialog for the fatigue offer. On-screen buttons stay as a fallback.
+  - Later, maybe: free play with Darcy and the metronome, no grading.
 - **Report ("зріз")** like a teacher's notes: a short one after every session, a full one when a lesson is mastered — what's good, what's still weak, 2–3 concrete things to watch next, and how timing / hands / accents changed from the first session to the last.
 - A notation row under the dots.
 - Intermediate lessons: paradiddle inversions, double paradiddle, paradiddle-diddle (triplets), sixteenths 60→100, accent on any note.
