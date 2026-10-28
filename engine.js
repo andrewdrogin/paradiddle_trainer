@@ -132,17 +132,21 @@ export function playNote(kit, accent, t, level = 1) {
   src.start(t);
 }
 
-// soft metronome tick; volume 0..1
+// metronome tick, a clear woodblock-like knock that cuts through the pad, higher and louder on "1";
+// volume 0..1. -> the oscillator (to cancel it with .stop()), or null when muted
 export function click(t, volume, strong = false) {
-  if (volume <= 0) return;
+  if (volume <= 0) return null;
   const o = ctx.createOscillator();
   const g = ctx.createGain();
-  o.frequency.value = strong ? 1500 : 1100;
-  const peak = 0.25 * volume * volume;
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(strong ? 1900 : 1300, t);
+  o.frequency.exponentialRampToValueAtTime(strong ? 1500 : 1000, t + 0.05);
+  const peak = (strong ? 0.7 : 0.5) * volume;
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(peak, t + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  g.gain.linearRampToValueAtTime(peak, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
   o.connect(g).connect(ctx.destination);
   o.start(t);
-  o.stop(t + 0.05);
+  o.stop(t + 0.08);
+  return o;
 }

@@ -32,9 +32,15 @@ const DEMO_OFF = new URLSearchParams(location.search).get('demo') === 'offform';
 let demoLearned = false;
 
 const PREFS_KEY = 'pt.trainer';
-const prefs = { strict: 'soft', metro: 30, blink: true, leftTop: false, length: 'short' };
+const prefs = { strict: 'soft', metro: 70, blink: true, leftTop: false, length: 'short' };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch {}
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} };
+// the metronome used to be a barely-there tick: bring older saved volumes up once (off stays off)
+if (!prefs.metroLoud) {
+  if (prefs.metro > 0) prefs.metro = Math.max(prefs.metro, 70);
+  prefs.metroLoud = true;
+  savePrefs();
+}
 
 // how much a session holds; mini (busy days) and skill sessions are started from their own buttons
 const LENGTHS = {
@@ -330,6 +336,33 @@ let lastBeat = -1;
 function startBeat(t0, period, strokes, div = 2) { beat = { t0, period, strokes, div }; lastBeat = -1; }
 function stopBeat() { beat = null; }
 
+// ---------- metronome ----------
+
+// Clicks on every beat, louder on "1". It keeps going while the trainer waits for your turn, so you
+// can come in on any click; your first hit takes over and the clicks follow you from there.
+let clicks = [];            // scheduled clicks still ahead: { t, node }
+let clickRun = 0;           // bumps on every silence, so a bar loop from before stops by itself
+
+function tick(t, strong = false) {
+  const node = E.click(t, prefs.metro / 100, strong);
+  if (node) clicks.push({ t, node });
+}
+
+// cancel the clicks still ahead and the bar loop
+function silenceClicks() {
+  const now = E.ctx?.currentTime ?? 0;
+  for (const c of clicks) if (c.t > now) { try { c.node.stop(); } catch {} }
+  clicks = [];
+  clickRun++;
+}
+
+// one bar of clicks from beat b at time t, then the next bar while still listening or waiting
+function clickBar(t, b, beatSec, run = clickRun) {
+  if (run !== clickRun || (phase !== 'listen' && phase !== 'wait')) return;
+  for (let k = 0; k < 4; k++) tick(t + k * beatSec, (b + k) % 4 === 0);
+  later(() => clickBar(t + 4 * beatSec, b + 4, beatSec, run), msUntil(t + 2 * beatSec));
+}
+
 // the whole screen gives a small bump on the beats, a bigger one on "1" (Hi-Fi Rush style)
 let thumpTimer = null;
 function thump(strong) {
@@ -385,6 +418,7 @@ let ask = null;             // { since, taps, timer, answers: [first, second], t
 function askPad(title, sub, answers, then, demoAnswer = 1) {
   clearTimers();
   stopBeat();
+  silenceClicks();
   phase = 'ask';
   ask = { since: performance.now(), taps: 0, timer: null, answers, then };
   $('rank').className = 'rank';
@@ -668,15 +702,17 @@ function listen() {
   $('againBtn').disabled = true;
   $('replayBtn').disabled = true;
   $('nextBtn').hidden = true;
+  silenceClicks();
   const div = divOf(phrase), gap = noteGap(phrase.bpm, div);
   const t0 = E.ctx.currentTime + LISTEN_LEAD;
   startBeat(t0, gap, phrase.notes.length, div);
   phrase.notes.forEach((nt, i) => {
     const t = t0 + i * gap;
     E.playNote(kit, nt.accent, t);
-    if (i % div === 0) E.click(t, prefs.metro / 100, i === 0);
     later(() => { flash(i, 'now'); corgi.hit(nt.hand, nt.accent); }, msUntil(t));
   });
+  // the clicks start with the phrase and carry on into "your turn"
+  clickBar(t0, 0, gap * div);
   later(waitTurn, msUntil(t0 + phrase.notes.length * gap));
 }
 
@@ -684,7 +720,7 @@ function listen() {
 function waitTurn() {
   phase = 'wait';
   hits = [];
-  setPlate('go', 'Твоя черга', 'Вступай на будь-який спалах рамки. Я почекаю.');
+  setPlate('go', 'Твоя черга', prefs.metro ? 'Вступай на будь-який клік метронома. Я почекаю.' : 'Вступай на будь-який спалах рамки. Я почекаю.');
   $('againBtn').disabled = false;
   // the previous take can still be heard while waiting, if it was this same phrase
   $('replayBtn').disabled = lastTake?.key !== phraseKey();
@@ -704,13 +740,14 @@ function onHit(h) {
     phase = 'play';
     hits = [h];
     $('againBtn').disabled = true;
+    silenceClicks();
     // the pulse and the soft click now follow the player's own first hit. A hit is stamped in+out
     // latency after the stroke on the timeline sounds are scheduled on, so that is taken off.
     const start = h.time - E.latencySec();
     startBeat(start, gap, n, div);
     for (let i = div; i < n; i += div) {
       const t = start + i * gap;
-      if (t > E.ctx.currentTime) E.click(t, prefs.metro / 100);
+      if (t > E.ctx.currentTime) tick(t, i % (div * 4) === 0);
     }
     const end = h.time + (n - 1) * gap + STRICTNESS[prefs.strict].window * gap + 0.3;
     later(finish, (end - E.ctx.currentTime) * 1000);
@@ -1172,6 +1209,7 @@ function pause() {
   clearTimers();
   dropAsk();
   stopBeat();
+  silenceClicks();
   E.stopMic();
   running = false;
   phase = 'idle';
@@ -1198,6 +1236,7 @@ function leaveSession() {
   clearTimers();
   dropAsk();
   stopBeat();
+  silenceClicks();
   E.stopMic();
   // leaving mid-session still counts what was played
   if (sessionStarted && !sessionClosed && sessionMetrics.length) closeOut();
