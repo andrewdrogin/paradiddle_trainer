@@ -19,6 +19,7 @@ Practising with the trainer should feel like lessons with a great, patient teach
 - Redraw her from photos of the real Darcy (colouring, markings, ears). Small paws: a beginner drummer, like the player.
 - Maybe: her look quietly reflects the player's level (barely reaching the pad → a headband → dark glasses and spinning sticks). Only as a mirror of where you are, never a reward to chase; drop it if it reads like a game.
 - Replace the placeholder SVG in `corgi.js` with a proper illustration (same `createCorgi` API: `beat`, `hit`, `mood`).
+- App icon from Darcy's head: browser tab favicon (now the default globe), plus PWA icons (manifest, 192/512) and apple-touch-icon for the home screen.
 
 ## USB-MIDI pad (ESP32-S3-Zero)
 
