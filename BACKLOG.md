@@ -11,7 +11,7 @@ Practising with the trainer should feel like lessons with a great, patient teach
 - **Adjusts**: plan, exercises, tempo and amount follow you; weak spots get more attention, easy things don't hold you back.
 - **Leads like a mentor**: knows where you're going (mastery, not "the end of the course") and says why each exercise matters.
 - **Patient**: never rushes or scolds, never lets you move on before it's really good.
-- **A good teacher, not Duolingo**: no streak pressure, no guilt ("you'll lose your flame!"), no XP, leagues or nagging notifications. It optimises for you learning, not for you opening the app: praise real progress («ліва нарешті вирівнялась»), pick up where you are after a gap without guilt, don't distract when you need to focus. In-session feedback (ranks, combo, ТУК!) is fine; habit-pressure mechanics aren't. The days-in-a-row counter is gone; the home screen shows a short note about last time (lesson, tempo, moving on, hand balance). Make that note smarter once the profile exists («ліва нарешті вирівнялась»).
+- **A good teacher, not Duolingo**: no streak pressure, no guilt ("you'll lose your flame!"), no XP, leagues or nagging notifications. It optimises for you learning, not for you opening the app: praise real progress («ліва нарешті вирівнялась»), pick up where you are after a gap without guilt, don't distract when you need to focus. In-session feedback (ranks, combo, ТУК!) is fine; habit-pressure mechanics aren't. The days-in-a-row counter is gone; the home screen shows a short note about last time (lesson, tempo, moving on, hand balance).
 
 ## Darcy, the partner
 
@@ -32,33 +32,11 @@ Practising with the trainer should feel like lessons with a great, patient teach
 
 ## Trainer
 
-- **Mastery, not "passed"** — a soft but persistent teacher: move on only when a lesson is really learned, go back when it slips. This is learning, not a game: no achievements, no "unlocked!", no collecting. Ranks, words and pulse are feedback on how it sounded, not rewards. Copy reads like a teacher: «Парадідл засвоєно. Далі: парадідл з акцентом».
-  - A lesson is a skill, not a session: it takes as many 10-minute sessions as it needs, several a day is fine. Simple exercises, brought to clean.
-  - Each lesson has a mastery meter 0–100 % (internal; what the player sees is the skills cloud below).
-  - Mastered = at the lesson's target tempo, steadily A/S ranks, even hands (left ≥ ~85 % of right), clear accents — stable across several sessions with breaks between them, at least one of them on a different day (it settles overnight). Several sessions in one evening speed it up but don't replace the next-day check. Until then the lesson stays in «Нове».
-  - Every passed lesson has a "form" that fades when it isn't played and is refreshed by review ranks. When the ranks drop (e.g. average below B) the lesson goes back to "needs review": it shows up more in warm-up and review, with an honest note («Одиночні трохи просіли, давай освіжимо»).
-  - If a lesson the current one builds on slips (doubles under the paradiddle), bring it back first, then go on. Never punishing, never "failed".
-- **Learner profile and individual plan** — students differ: what's easy for one is hard for another, and the plan follows the player, not a fixed track.
-  - Keep accumulating from every note (hand, early/late, loudness) into a skills profile: per hand timing accuracy and rush/drag tendency; evenness of doubles; accent vs tap contrast; tempo stability inside a phrase; the tempo where it starts to fall apart; left/right balance. Mastery is computed from the same profile.
-  - The plan adapts to it: a weak spot gets more targeted work (left late → more left-led warm-ups, mirror variants and left-hand review); rushing at higher tempi → longer at the current tempo; easy things → fewer repetitions and moving on sooner; hard things → smaller steps, more time, back to the basics underneath.
-- **Everyone's pace is different**: mastery is judged by quality, never by time (3 sessions or 15 — both fine); tempo steps adapt (wider when it's easy, +2–4 BPM when it's hard); the amount of repetition adapts; no deadlines, no "normal pace", no comparison with others — reports compare you only with your own earlier sessions.
-- **Sessions**: 10 minutes stays the default.
-  - Stop on a good note when tired: if quality drops inside a session (ranks sliding A → C, a hand starting to lag), offer to finish on an easy phrase — tired practice trains the mistakes in.
-  - A 3–5 minute mini-session for busy days: short warm-up + one or two of the exercises that slipped. Regular beats long.
-  - Answer with the pad, hands stay on it: at the end «Ще 5 хвилин?» — 1 tap finish, 2 taps +5 minutes (wait ~1 s after the first tap for a second one, then confirm on screen). Same tap dialog for the fatigue offer. On-screen buttons stay as a fallback.
-  - Later, maybe: free play with Darcy and the metronome, no grading.
-- **Reading the player's state** — a teacher notices a bad day.
-  - Signals, always against the player's own profile, never a norm: warm-up clearly worse than usual (off form from the start); quality sliding after a good start (fatigue); several takes in a row falling apart even after the help ladder (everything slips).
-  - Responses by case: a mild dip → quietly a tempo step down and simpler phrases; off form from the start → offer «Схоже, сьогодні руки не в формі. 5 хвилин спокійних вправ на концентрацію і на цьому все?» — no new material that day, only easy consolidation; fatigue mid-session → finish on an easy phrase. Answered with pad taps (1 = yes, easier; 2 = no, keep going); the player always decides.
-  - Concentration exercises: singles very slow (~50 BPM) listening only for an even sound in both hands; one hand, hit — long pause — hit; everything as quiet and even as possible; a short 2–3 note echo to feel the hits land.
-  - A bad day must not wreck the profile or lessons' form: when the dip is general, not lesson-specific, those takes weigh little in mastery, so one tired evening doesn't push you back.
-- **«Мій шлях» as a cloud of skill tags**, not a list of lessons with ticks (that reads like achievements).
-  - A tag is a skill, not a lesson: «рівний таймінг», «ліва рука», «подвійні», «акценти», «тихі ноти», «парадідл», «темп 80», «поспіх під контролем». Lessons stay inside as the route; the screen shows what you can do.
-  - Colour = mastery, from pale to full green, gradually, never on/off; it honestly fades when a skill slips (a hint to review, not a punishment).
-  - Size = how relevant it is right now: what you're working on is big in the middle, mastered basics smaller around it, what's ahead small and pale at the edges.
-  - Several clouds, one per stage: новачок, аматор, впевнений… each with its own skills (новачок: рівний таймінг, ліва рука, подвійні, акценти; аматор: інверсії, тихі ноти, шістнадцяті 100…). The current cloud is in focus and large; earlier ones shrink beside it, green («ось що вже вмієш»); the next shows as a pale silhouette, so you see where you're heading. Swipe between them, tap any tag in any cloud to practise. No "level complete!" moment: the next cloud fades in by itself as the current one turns mostly green, like a teacher saying «основу ти вже тримаєш, час братися за складніше».
-  - Inside a cloud, groups (Руки, Ритм, Динаміка, Рудименти) are zones or hues, not steps to take.
-  - Tap a tag → the teacher's note on it (what's good, what to work on, which exercises) and «Попрацювати над цим»: a short session built from exercises for that skill, at the tempo where it's on the edge for you now, with feedback focused on it; afterwards the tag's colour updates. The regular session also mixes weak tags into warm-up and review by itself; the player can pick a skill any time, like telling a teacher "today I want to work on my left hand".
-- **Report ("зріз")** like a teacher's notes: a short one after every session, a full one when a lesson is mastered — what's good, what's still weak, 2–3 concrete things to watch next, and how timing / hands / accents changed from the first session to the last.
-- A notation row under the dots.
-- Intermediate lessons: paradiddle inversions, double paradiddle, paradiddle-diddle (triplets), sixteenths 60→100, accent on any note.
+Built: mastery over sessions, learner profile, reading the day, mini sessions, pad-tap answers, skill clouds with practice, teacher reports, notation row, amateur lessons (see README). Still open:
+
+- **Tune on the real pad**: the thresholds were set by reasoning, not by playing — a good session (avg score 0.8), off form (warm-up 0.12 below usual), tiring (0.15 below the best stretch), form half-life (21 days), the scales behind each skill's colour. Adjust after a week or two of real sessions.
+- **A mild dip**: quietly a tempo step down and simpler phrases for the rest of the session (now only the help ladder slows down, phrase by phrase).
+- **Calm exercises without the ladder**: on a calm day a miss could just mean "again", no "slower / trouble spot".
+- **Home note**: say more from the profile than "last time" plus one line of progress (e.g. what today's plan focuses on and why).
+- Later, maybe: free play with Darcy and the metronome, no grading.
+- Rim: two MIDI notes once the USB pad exists; a rim lesson then.

@@ -1,21 +1,34 @@
 // Echo trainer: the app plays a phrase, waits patiently, you echo it on the pad, it shows how it went.
-// Session (short ~10 min by default, or full ~20): sound check once a day → warm-up → review of
-// passed lessons → the current lesson, mixed with its mirror and a known phrase now and then →
-// an easy final phrase and a summary. Visual support in the spirit of Patapon: the screen frame
-// pulses on the beats and every hit pops right away, brighter the closer it is to the beat.
+// Session (short ~10 min by default, full ~20, or a mini one for busy days): sound check once a day →
+// warm-up → review of slipped / settling / mastered lessons → the current lesson, mixed with its
+// mirror and a settling or known phrase now and then → an easy final phrase and a teacher's summary.
+// A skill session (from a tag in «Мій шлях») is warm-up → that skill's exercises → finish.
+// Like a teacher it notices the day: off form from the warm-up → offers calm concentration exercises;
+// quality sliding mid-session → offers to finish on an easy phrase. Questions are answered with the
+// pad: 1 tap or 2 taps. Visual support in the spirit of Patapon: the screen frame pulses on the beats
+// and every hit pops right away, brighter the closer it is to the beat.
 
 import * as E from './engine.js';
 import { createCorgi } from './corgi.js';
 import {
-  STEPS, LEVELS, WARMUP, STRICTNESS, TEMPOS, notesOf, stepPhrase, canMirror, noteGap, grade, rankOf, handBalance,
-  loadProgress, saveProgress, recordAttempt, reviewSteps,
+  STEPS, WARMUP, STRICTNESS, TEMPOS, notesOf, stepPhrase, canMirror, noteGap, grade, rankOf, handBalance, tempoOf,
+  loadProgress, saveProgress, recordAttempt, reviewSteps, settlingSteps, slippedNeed, sessionQuality, openNext,
+  closeSession, dayKey,
 } from './course.js';
+import {
+  loadProfile, saveProfile, takeMetrics, addTake, warmupOffForm, tiring, sessionReport, endSession,
+  progressNote, lessonReport, metric,
+} from './profile.js';
+import { SKILLS, skillValue, levelWord, skillNote, skillPractice, skillFocus } from './skills.js';
+import { renderPath, focusCloud } from './path.js';
 
 const $ = id => document.getElementById(id);
 // ?demo: no mic, a simulated player echoes each phrase (for testing without a pad);
 // ?demo=struggle: in "new" the player rushes until it has worked through the trouble spot
 const DEMO = new URLSearchParams(location.search).has('demo');
 const DEMO_STRUGGLE = new URLSearchParams(location.search).get('demo') === 'struggle';
+// ?demo=offform: the warm-up reads as a bad day and the calm exercises are accepted
+const DEMO_OFF = new URLSearchParams(location.search).get('demo') === 'offform';
 let demoLearned = false;
 
 const PREFS_KEY = 'pt.trainer';
@@ -23,12 +36,26 @@ const prefs = { strict: 'soft', metro: 30, blink: true, leftTop: false, length: 
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch {}
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} };
 
-// how much a session holds
+// how much a session holds; mini (busy days) and skill sessions are started from their own buttons
 const LENGTHS = {
   short: { label: 'Коротке (~10 хв)', warmup: [0, 1, 4], review: 2, reviewClean: 1, goal: 6, minutes: 5 },
   full: { label: 'Повне (~20 хв)', warmup: [0, 1, 2, 3, 4, 5, 6], review: 3, reviewClean: 2, goal: 12, minutes: 10 },
+  mini: { label: 'Міні (~4 хв)', warmup: [0, 4], review: 2, reviewClean: 1, goal: 3, minutes: 2 },
+  skill: { label: 'Скіл (~7 хв)', warmup: [4], review: 0, reviewClean: 1, goal: 6, minutes: 5 },
 };
-const plan = () => LENGTHS[prefs.length] || LENGTHS.short;
+let sessionLen = null;      // this session's length when it isn't the default one
+const plan = () => LENGTHS[sessionLen || prefs.length] || LENGTHS.short;
+
+// concentration exercises for a day when the hands aren't in form: slow, quiet, listening
+const CALM = [
+  { title: 'Одиночні, дуже повільно', sticking: 'RLRLRLRL', bpm: 50, div: 2, say: 'Слухай лише одне: щоб обидві руки звучали однаково' },
+  { title: 'Права: удар і пауза', sticking: 'RRRR', bpm: 50, div: 1, say: 'Удар, і довга пауза. Відчуй, як нота лягає' },
+  { title: 'Ліва: удар і пауза', sticking: 'LLLL', bpm: 50, div: 1, say: 'Удар, і довга пауза. Відчуй, як нота лягає' },
+  { title: 'Тихо і рівно', sticking: 'RLRLRLRL', bpm: 56, div: 2, say: 'Все якомога тихіше й рівніше' },
+  { title: 'Коротке ехо', sticking: 'RLR', bpm: 60, div: 2, say: 'Три ноти: відчуй кожну' },
+];
+const CALM_EACH = 2;        // accepted takes of each concentration exercise
+const CALM_MINUTES = 5;
 
 const LISTEN_LEAD = 0.35;   // seconds from "listen" to the first note
 const NEXT_PAUSE = 1800;    // ms between a clean result and the next phrase
@@ -41,9 +68,23 @@ const STUCK_AFTER = 8;      // attempts on the lesson without moving on before i
 const PARK_FOR = 2;         // known phrases played while the lesson is parked
 
 const progress = loadProgress();
+const profile = loadProfile();
 let kit = null;
 let running = false;
 let sessionStarted = false;
+
+// what this session has seen, for mastery, the profile and the summary
+let skillId = null;         // a skill session: the skill being worked on
+let skillBefore = 0;
+let sessionTakes = {};      // stepId -> [{ t, score, timing, accents, hands }], in-tempo lesson takes
+let sessionMetrics = [];    // per-take metrics (profile.takeMetrics)
+let warmScores = [];        // rank scores of the warm-up
+let mainScores = [];        // rank scores in the main part, in order, for noticing fatigue
+let offForm = false;        // the warm-up was clearly below usual: takes weigh little today
+let offFormAsked = false;
+let tiredAsked = false;
+let sessionClosed = false;
+let summaryHtml = '';
 
 let stage = null;           // 'check' | 'warmup' | 'review' | 'new' | 'finish' | 'done'
 let warmIdx = 0;
@@ -54,7 +95,10 @@ let streak = 0;             // clean phrases in tempo in a row; a miss just rese
 let stats = null;           // { accepted, best, startMs, startStep, startTempo }
 
 // "new" stage: what to play next and how it's going
-let newState = null;        // { accepted, goal, startMs, sinceInsert, lessonCount, stuck, parked, pick }
+// skill: a skill session's exercises in rotation; calm: concentration exercises (index into CALM);
+// prereq: a slipped lesson the current one stands on, brought back first
+let newState = null;        // { accepted, goal, startMs, minutes, sinceInsert, lessonCount, stuck, parked, pick,
+                            //   skill, skillIdx, calm, calmIdx, calmClean, prereq, prereqClean }
 
 let base = null;            // the phrase as the course wants it: { title, notes: [{ hand, accent }], bpm }
 let phrase = null;          // what is played now: base, or base slower, or its trouble spot
@@ -85,7 +129,7 @@ function helpPhrase() {
   if (help.mode === 'slow') return { ...base, bpm: slower(base.bpm) };
   if (help.mode === 'part') {
     const frag = base.notes.slice(help.part, help.part + PART_LEN);
-    return { title: base.title, notes: [...frag, ...frag], bpm: slower(base.bpm), loop: PART_LEN };
+    return { title: base.title, notes: [...frag, ...frag], bpm: slower(base.bpm), div: base.div, loop: PART_LEN };
   }
   return base;
 }
@@ -110,10 +154,18 @@ function setStage(name) {
   const cur = STAGES.indexOf(name === 'done' ? 'finish' : name);
   for (const el of $('stages').children) {
     const k = STAGES.indexOf(el.dataset.stage);
-    el.className = k === cur ? 'active' : k < cur || name === 'done' ? 'done' : '';
+    el.classList.toggle('active', k === cur);
+    el.classList.toggle('done', k !== cur && (k < cur || name === 'done'));
   }
   $('skipBtn').disabled = name === 'warmup' || name === 'done';   // warm-up is mandatory
   $('skipBtn').textContent = name === 'new' ? 'Пропустити вправу' : name === 'check' ? 'Пропустити перевірку' : 'Пропустити';
+}
+
+// the stage names follow the kind of session: a skill session has no review, a calm one is calm
+function labelStages(calm = false) {
+  const span = k => $('stages').querySelector(`[data-stage="${k}"]`);
+  span('review').classList.toggle('skip', !!skillId || calm);
+  span('new').textContent = calm ? 'Спокійно' : skillId ? 'Скіл' : 'Нове';
 }
 
 function showStreak() {
@@ -121,11 +173,27 @@ function showStreak() {
   document.body.classList.toggle('fever', streak >= 4);
 }
 
-const COUNTS = ['1', 'і', '2', 'і', '3', 'і', '4', 'і'];
+// the count under each note: the beat number on a beat, "і" / "і а" / "е і а" between beats
+const COUNT_SUB = { 1: [''], 2: ['', 'і'], 3: ['', 'і', 'а'], 4: ['', 'е', 'і', 'а'] };
+const countLabel = (i, div) => (i % div === 0 ? String(Math.floor(i / div) % 4 + 1) : COUNT_SUB[div][i % div]);
+const divOf = p => p.div || 2;
+
+// one note of drum notation: a head with a stem, beamed per beat (two beams for sixteenths), an accent
+// mark above, "3" over a triplet
+function notaCell(i) {
+  const div = divOf(phrase), pos = i % div;
+  const last = pos === div - 1 || i === phrase.notes.length - 1;
+  let cls = 'nota';
+  if (div > 1 && !(pos === 0 && last)) cls += pos === 0 ? ' b-start' : last ? ' b-end' : ' b-mid';
+  if (div === 4) cls += ' b2';
+  const acc = phrase.notes[i].accent ? '<em>&gt;</em>' : '';
+  const trip = div === 3 && pos === 1 ? '<sup>3</sup>' : '';
+  return [cls, `${acc}${trip}<span class="nh"></span>`];
+}
 
 // two rows of dots, one per hand (right on top unless swapped), each hand in its own colour with its
-// letter inside, so tired eyes don't mix them up; accents are big. Below: loudness bars, marks, count.
-// A looped trouble spot gets a divider between its two passes.
+// letter inside, so tired eyes don't mix them up; accents are big. Below: the notation row, loudness
+// bars, marks, count. A looped trouble spot gets a divider between its two passes.
 function renderGrid() {
   const g = $('grid');
   g.style.setProperty('--n', phrase.notes.length);
@@ -145,11 +213,13 @@ function renderGrid() {
   };
   for (const hand of prefs.leftTop ? ['L', 'R'] : ['R', 'L']) row(hand);
   cell('hand', '');
+  phrase.notes.forEach((_, i) => cell(...notaCell(i), i));
+  cell('hand', '');
   phrase.notes.forEach((_, i) => cell('vel', '<i></i>', i));
   cell('hand', '');
   phrase.notes.forEach((_, i) => cell('mark', '', i));
   cell('hand', '');
-  phrase.notes.forEach((_, i) => cell('count muted small', COUNTS[i % 8], i));
+  phrase.notes.forEach((_, i) => cell('count muted small', countLabel(i, divOf(phrase)), i));
   $('gridLabel').textContent = phrase.loop ? `Шматок ×2: ${base.notes.slice(help.part, help.part + PART_LEN).map(n => (n.hand === 'R' ? 'П' : 'Л')).join(' ')}` : '';
 }
 
@@ -222,13 +292,19 @@ function showHeader(pickInfo) {
   }
   const subs = [];
   if (stage === 'warmup') subs.push(`Розминка · фраза ${warmIdx + 1} з ${plan().warmup.length}`);
-  if (stage === 'new') {
-    let sub = `Фраза ${newState.accepted + 1} з ${newState.goal}`;
-    if (pickInfo?.kind === 'lesson') {
+  if (stage === 'new' && newState.calm) {
+    subs.push(`Спокійно · ${CALM[newState.calmIdx].say}`);
+  } else if (stage === 'new') {
+    let sub = newState.skill ? `Скіл «${SKILLS[newState.skill].title}» · фраза ${newState.accepted + 1} з ${newState.goal}`
+      : `Фраза ${newState.accepted + 1} з ${newState.goal}`;
+    if (pickInfo?.prereq) {
+      sub += ` · освіжаємо: на цьому тримається «${STEPS[progress.current].title}»`;
+    } else if (pickInfo?.kind === 'lesson' && pickInfo.step === progress.current) {
       const st = progress.steps[STEPS[progress.current].id];
       sub += ` · до наступного кроку ${st.hist.filter(Boolean).length} з ${st.len === 'short' ? 2 : 3}`;
     }
-    if (pickInfo?.kind === 'insert') sub += ' · знайоме, для перепочинку';
+    if (pickInfo?.settle) sub += ' · закріплюємо';
+    else if (pickInfo?.kind === 'insert') sub += ' · знайоме, для перепочинку';
     subs.push(sub);
   }
   if (stage === 'review') subs.push(`Повторення · ще ${reviewQueue.length} ${reviewQueue.length === 1 ? 'вправа' : 'вправи'}`);
@@ -236,28 +312,11 @@ function showHeader(pickInfo) {
   $('phraseSub').textContent = subs.join('');
 }
 
-// ---------- lessons map ----------
+// ---------- my way ----------
 
 function renderMap() {
-  const out = [];
-  LEVELS.forEach((lvl, li) => {
-    out.push(`<div class="level${lvl.locked ? ' locked' : ''}"><b>${lvl.title}</b> <span class="muted small">${lvl.note}</span></div>`);
-    lvl.lessons.forEach((title, k) => {
-      if (lvl.locked) {
-        out.push(`<div class="lesson locked"><span class="no">🔒</span><span class="grow">${title}</span><span class="muted small">згодом</span></div>`);
-        return;
-      }
-      const step = STEPS[k], st = progress.steps[step.id];
-      const cur = k === progress.current;
-      const status = st.passed ? '✓' : cur ? '●' : '·';
-      const pct = Math.round(st.t / step.max * 100);
-      out.push(`<div class="lesson${cur ? ' current' : ''}${st.passed ? ' passed' : ''}${!st.passed && !cur && k > progress.current ? ' ahead' : ''}">
-        <span class="no">${status} ${k + 1}</span><span class="grow">${title}</span>
-        <span class="tempo"><i style="width:${pct}%"></i></span><span class="muted small">${TEMPOS[st.t]}/${TEMPOS[step.max]}</span></div>`);
-    });
-  });
-  $('map').innerHTML = out.join('');
-  $('mapSummary').textContent = `Ти зараз: ${lessonNo(progress.current)} з ${STEPS.length}, ${STEPS[progress.current].title}`;
+  if (document.body.dataset.screen !== 'path') return;
+  renderPath({ progress, profile, onPractice: id => startSession('skill', id) });
 }
 
 // ---------- beat pulse ----------
@@ -265,10 +324,10 @@ function renderMap() {
 // The frame pulses on the beats, bright on "1", plus a faint pulse on an "і" half-beat when a stroke
 // falls on it. It keeps going from "listen" into "your turn" (beats only, no strokes there), so you
 // can come in on any pulse; your first hit re-syncs it to you.
-let beat = null;            // { t0, period: one eighth, strokes: eighths that carry a stroke } on the heard timeline
+let beat = null;            // { t0, period: one note, strokes: notes that carry a stroke, div } on the heard timeline
 let lastBeat = -1;
 
-function startBeat(t0, period, strokes) { beat = { t0, period, strokes }; lastBeat = -1; }
+function startBeat(t0, period, strokes, div = 2) { beat = { t0, period, strokes, div }; lastBeat = -1; }
 function stopBeat() { beat = null; }
 
 // the whole screen gives a small bump on the beats, a bigger one on "1" (Hi-Fi Rush style)
@@ -282,10 +341,11 @@ function thump(strong) {
   thumpTimer = setTimeout(() => b.classList.remove('thump', 'thump-1'), 110);
 }
 
-// pulse for eighth k: 'strong' on "1", 'beat' on 2/3/4, 'half' on an "і" with a stroke, else none
-export function pulseKind(k, strokes) {
-  if (k % 8 === 0) return 'strong';
-  if (k % 2 === 0) return 'beat';
+// pulse for note k (div notes per beat): 'strong' on "1", 'beat' on 2/3/4, 'half' between beats
+// where a stroke falls, else none
+export function pulseKind(k, strokes, div = 2) {
+  if (k % (div * 4) === 0) return 'strong';
+  if (k % div === 0) return 'beat';
   return k < strokes ? 'half' : null;
 }
 
@@ -295,7 +355,7 @@ export function pulseKind(k, strokes) {
     const k = Math.floor((heard - beat.t0) / beat.period + 0.001);
     if (k >= 0 && k !== lastBeat) {
       lastBeat = k;
-      const kind = pulseKind(k, beat.strokes);
+      const kind = pulseKind(k, beat.strokes, beat.div);
       if (kind) {
         const frame = $('beatFrame');
         frame.className = '';
@@ -303,8 +363,8 @@ export function pulseKind(k, strokes) {
         frame.className = 'pulse ' + kind;
         if (kind !== 'half' && phase !== 'listen') corgi.beat(kind === 'strong');
         if (kind !== 'half') thump(kind === 'strong');
-        const c = countEl(k % 8);
-        if (c && phase !== 'result' && phase !== 'hold') {
+        const c = phrase && countEl(k % phrase.notes.length);
+        if (c && phase !== 'result' && phase !== 'hold' && phase !== 'ask') {
           $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
           c.classList.add('on');
         }
@@ -313,6 +373,55 @@ export function pulseKind(k, strokes) {
   }
   requestAnimationFrame(beatLoop);
 })();
+
+// ---------- answering with the pad ----------
+
+// Hands stay on the pad: 1 tap = the first answer, 2 taps = the second. After the first tap it waits
+// a moment for a second one, then says on screen what it understood. Buttons are the fallback.
+const ASK_DEAF = 800;       // ms after the question before taps count (the last stroke still rings)
+const ASK_SECOND = 1000;    // ms to wait for a second tap
+let ask = null;             // { since, taps, timer, answers: [first, second], then(k) }
+
+function askPad(title, sub, answers, then, demoAnswer = 1) {
+  clearTimers();
+  stopBeat();
+  phase = 'ask';
+  ask = { since: performance.now(), taps: 0, timer: null, answers, then };
+  $('rank').className = 'rank';
+  setPlate('go', title, (sub ? `${sub}<br>` : '') +
+    `<span class="taps">Вдар по паду: 1 раз — ${answers[0]}, 2 рази — ${answers[1]}</span>` +
+    `<span class="row"><button class="cta" data-ans="1">${answers[0]}</button><button class="cta" data-ans="2">${answers[1]}</button></span>`);
+  $('plate').querySelectorAll('[data-ans]').forEach(b => { b.onclick = () => answer(Number(b.dataset.ans)); });
+  $('againBtn').disabled = true;
+  $('replayBtn').disabled = true;
+  $('nextBtn').hidden = true;
+  if (DEMO) later(() => answer(demoAnswer), 6000);
+}
+
+function askHit() {
+  if (performance.now() - ask.since < ASK_DEAF) return;
+  ask.taps++;
+  clearTimeout(ask.timer);
+  const el = $('plate').querySelector('.taps');
+  if (el) el.textContent = `Почув: ${'● '.repeat(ask.taps).trim()}`;
+  if (ask.taps >= 2) answer(2);
+  else ask.timer = setTimeout(() => answer(1), ASK_SECOND);
+}
+
+function answer(k) {
+  if (!ask) return;
+  clearTimeout(ask.timer);
+  const { answers, then } = ask;
+  ask = null;
+  phase = 'idle';
+  setPlate('done', `${k === 1 ? '●' : '● ●'}  ${answers[k - 1]}`);
+  later(() => then(k), 700);
+}
+
+function dropAsk() {
+  if (ask) clearTimeout(ask.timer);
+  ask = null;
+}
 
 // ---------- sound check ----------
 
@@ -416,29 +525,63 @@ function simulateCheck(step) {
 
 // ---------- session flow ----------
 
+const freshNew = extra => ({
+  accepted: 0, goal: plan().goal, startMs: Date.now(), minutes: plan().minutes, sinceInsert: 0, lessonCount: 0,
+  stuck: 0, parked: 0, pick: null, skill: skillId, skillIdx: 0, calm: false, prereq: null, prereqClean: 0, ...extra,
+});
+
 function goStage(name, title, sub) {
   setStage(name);
   if (name === 'warmup') { warmIdx = 0; warmTakes = []; }
   if (name === 'review') { reviewQueue = reviewSteps(progress).slice(0, plan().review); reviewClean = 0; }
   if (name === 'new') {
-    newState = { accepted: 0, goal: plan().goal, startMs: Date.now(), sinceInsert: 0, lessonCount: 0, stuck: 0, parked: 0, pick: null };
+    newState = freshNew();
+    // a lesson the current one stands on has slipped: bring it back first
+    const need = skillId ? -1 : slippedNeed(progress);
+    if (need >= 0) {
+      newState.prereq = need;
+      title = `Спершу освіжимо «${STEPS[need].title}»`;
+      sub = `На ній тримається «${STEPS[progress.current].title}». Кілька чистих фраз, і далі`;
+    }
   }
   setPlate('done', title, sub);
   later(nextPhrase, STAGE_PAUSE);
 }
 
-// a known phrase for a breather or the finish: a passed lesson a tempo step below its best,
-// or single strokes when nothing is passed yet
-function knownPick() {
+// after the warm-up: review, or straight to the skill in a skill session
+const afterWarmup = () => (skillId ? 'new' : 'review');
+
+// concentration exercises instead of the rest of the session, on a day the hands aren't in form
+function startCalm() {
+  labelStages(true);
+  setStage('new');
+  newState = freshNew({ skill: null, calm: true, calmIdx: 0, calmClean: 0, goal: CALM.length * CALM_EACH, minutes: CALM_MINUTES });
+  setPlate('done', 'Спокійні вправи', 'Повільно, тихо, слухаючи. Тут нікуди не треба поспішати');
+  later(nextPhrase, STAGE_PAUSE);
+}
+
+// A known phrase for a breather: mostly a settling lesson at its own tempo (it counts towards
+// mastery), else a passed lesson a tempo step below its best, or single strokes when nothing is
+// passed yet. easy: only the relaxed kind, for the final phrase.
+function knownPick(easy = false) {
+  const settle = easy ? [] : settlingSteps(progress);
+  if (settle.length && Math.random() < 0.7) return { kind: 'insert', step: settle[Math.floor(Math.random() * settle.length)], settle: true };
   const passed = STEPS.map((s, i) => i).filter(i => progress.steps[STEPS[i].id].passed && i !== progress.current);
   if (!passed.length) return { kind: 'insert', warm: 4 };
   return { kind: 'insert', step: passed[Math.floor(Math.random() * passed.length)], slower: 1 };
 }
 
-// what "new" plays next: the lesson (every 3rd led by the other hand), a known phrase after every
-// few accepted lesson phrases, or known phrases while a stuck lesson is parked
+// what "new" plays next: a slipped lesson underneath first; the lesson (every 3rd led by the other
+// hand), a known phrase after every few accepted lesson phrases, or known phrases while a stuck lesson
+// is parked. A skill session rotates its skill's exercises; a calm one goes through CALM.
 function pickNew() {
   const ns = newState;
+  if (ns.calm) return { kind: 'calm', calm: ns.calmIdx };
+  if (ns.skill) {
+    const list = skillPractice(ns.skill);
+    return { kind: 'skill', ...list[ns.skillIdx % list.length] };
+  }
+  if (ns.prereq !== null) return { kind: 'lesson', step: ns.prereq, prereq: true };
   if (ns.parked > 0) return knownPick();
   if (ns.sinceInsert >= INSERT_EVERY) { ns.sinceInsert = 0; return knownPick(); }
   const step = STEPS[progress.current];
@@ -447,6 +590,10 @@ function pickNew() {
 }
 
 function phraseOfPick(p) {
+  if (p.calm !== undefined) {
+    const c = CALM[p.calm];
+    return { title: c.title, notes: notesOf(c.sticking, []), bpm: c.bpm, div: c.div };
+  }
   if (p.warm !== undefined) {
     const w = WARMUP[p.warm];
     return { title: w.title, notes: notesOf(w.sticking, w.accents), bpm: w.bpm };
@@ -460,7 +607,19 @@ function nextPhrase() {
   if (stage === 'warmup') {
     if (warmIdx >= plan().warmup.length) {
       const bal = handBalance(warmTakes);
-      goStage('review', 'Розминку зроблено 👍', bal ? `Ліва рука ≈ ${bal}% від правої за силою удару` : '');
+      const sub = bal ? `Ліва рука ≈ ${bal}% від правої за силою удару` : '';
+      // a teacher notices a bad day from the warm-up: offer calm exercises instead, the player decides
+      if (!offFormAsked) {
+        offFormAsked = true;
+        offForm = warmupOffForm(profile, warmScores) || DEMO_OFF;
+        saveProfile(profile);
+        if (offForm) {
+          askPad('Схоже, сьогодні руки не в формі', 'Це буває. 5 хвилин спокійних вправ на концентрацію, і на цьому все?',
+            ['так, спокійно', 'ні, граємо далі'], k => (k === 1 ? startCalm() : goStage(afterWarmup(), 'Добре, граємо далі', '')), DEMO_OFF ? 1 : 2);
+          return;
+        }
+      }
+      goStage(afterWarmup(), 'Розминку зроблено 👍', sub);
       return;
     }
     const w = WARMUP[plan().warmup[warmIdx]];
@@ -476,9 +635,11 @@ function nextPhrase() {
     base = stepPhrase(step, progress.steps[step.id]);
   } else if (stage === 'new') {
     const ns = newState;
-    if (!ns.pick && (ns.accepted >= ns.goal || Date.now() - ns.startMs > plan().minutes * 60000)) {
+    const over = ns.accepted >= ns.goal || Date.now() - ns.startMs > ns.minutes * 60000;
+    if (ns.calm && !ns.pick && (over || ns.calmIdx >= CALM.length)) { showSummary(); return; }
+    if (!ns.pick && over) {
       setStage('finish');
-      ns.pick = knownPick();
+      ns.pick = knownPick(true);
     }
     ns.pick ??= pickNew();
     pickInfo = ns.pick;
@@ -503,17 +664,17 @@ function listen() {
   phase = 'listen';
   corgi.mood('');
   clearMarks();
-  setPlate('listen', 'Слухай…');
+  setPlate('listen', 'Слухай…', 'Дарсі грає фразу');
   $('againBtn').disabled = true;
   $('replayBtn').disabled = true;
   $('nextBtn').hidden = true;
-  const gap = noteGap(phrase.bpm);
+  const div = divOf(phrase), gap = noteGap(phrase.bpm, div);
   const t0 = E.ctx.currentTime + LISTEN_LEAD;
-  startBeat(t0, gap, phrase.notes.length);
+  startBeat(t0, gap, phrase.notes.length, div);
   phrase.notes.forEach((nt, i) => {
     const t = t0 + i * gap;
     E.playNote(kit, nt.accent, t);
-    if (i % 2 === 0) E.click(t, prefs.metro / 100, i === 0);
+    if (i % div === 0) E.click(t, prefs.metro / 100, i === 0);
     later(() => { flash(i, 'now'); corgi.hit(nt.hand, nt.accent); }, msUntil(t));
   });
   later(waitTurn, msUntil(t0 + phrase.notes.length * gap));
@@ -532,12 +693,13 @@ function waitTurn() {
 
 function onHit(h) {
   if (phase === 'check') { checkHit(h); return; }
+  if (phase === 'ask') { askHit(); return; }
   // after a miss: a deliberate tap on the pad means "ready, go on"
   if (phase === 'hold') {
     if (performance.now() - holdSince > HOLD_DEAF) goOn();
     return;
   }
-  const n = phrase?.notes.length, gap = phrase && noteGap(phrase.bpm);
+  const n = phrase?.notes.length, div = phrase && divOf(phrase), gap = phrase && noteGap(phrase.bpm, div);
   if (phase === 'wait') {
     phase = 'play';
     hits = [h];
@@ -545,8 +707,8 @@ function onHit(h) {
     // the pulse and the soft click now follow the player's own first hit. A hit is stamped in+out
     // latency after the stroke on the timeline sounds are scheduled on, so that is taken off.
     const start = h.time - E.latencySec();
-    startBeat(start, gap, n);
-    for (let i = 2; i < n; i += 2) {
+    startBeat(start, gap, n, div);
+    for (let i = div; i < n; i += div) {
       const t = start + i * gap;
       if (t > E.ctx.currentTime) E.click(t, prefs.metro / 100);
     }
@@ -568,7 +730,7 @@ function popHit(h) {
   if (i >= phrase.notes.length) return;
   let dev = 0;
   if (i > 0) {
-    const target = noteGap(phrase.bpm), free = STRICTNESS[prefs.strict].tempoFree;
+    const target = noteGap(phrase.bpm, divOf(phrase)), free = STRICTNESS[prefs.strict].tempoFree;
     const gaps = hits.slice(1, -1).map((x, k) => x.time - hits[k].time).sort((a, b) => a - b);
     const typical = gaps.length ? gaps[gaps.length >> 1] : target;
     const ref = Math.min(target * (1 + free), Math.max(target * (1 - free), typical));
@@ -610,28 +772,87 @@ function scoreBars(rk) {
   return `<span class="bars">${bar('Таймінг', rk.timing)}${bar('Акценти', rk.accents)}${bar('Руки', rk.hands)}</span>`;
 }
 
+// the lesson this take belongs to, when it was played as the lesson itself (not slower, not a
+// fragment of it): -> step index or -1
+function takeStep() {
+  if (help.mode === 'part') return -1;
+  if (stage === 'review') return reviewQueue[0] ?? -1;
+  const pick = stage === 'new' ? newState.pick : null;
+  return pick?.step !== undefined && !pick.slower ? pick.step : -1;
+}
+
+// every take teaches the trainer about you: the profile, the lesson's session takes, the scores
+// the state is read from
+function recordTake(r, rk) {
+  if (!hits.length) return null;
+  const m = takeMetrics(phrase, r);
+  const si = takeStep();
+  const step = si >= 0 ? STEPS[si] : null;
+  addTake(profile, m, rk.score, { weight: offForm ? 0.3 : 1, stepId: step?.id, bpm: step && phrase.bpm });
+  saveProfile(profile);
+  sessionMetrics.push(m);
+  if (stage === 'warmup') warmScores.push(rk.score);
+  if (step && help.mode === 'normal') {
+    (sessionTakes[step.id] ??= []).push({ t: progress.steps[step.id].t, score: rk.score, timing: rk.timing, accents: rk.accents, hands: rk.hands });
+  }
+  if (stage === 'new' && help.mode === 'normal' && !newState.calm) mainScores.push(rk.score);
+  return m;
+}
+
+// The current lesson came out well at its target tempo across this session's takes: it settles,
+// the next lesson opens. -> a plate message, or null
+function checkReady(pick) {
+  if (stage !== 'new' || pick?.kind !== 'lesson' || pick.prereq || pick.step !== progress.current || help.mode !== 'normal') return null;
+  const step = STEPS[progress.current], st = progress.steps[step.id];
+  if (st.passed || !sessionQuality(step, sessionTakes[step.id] || [])?.good) return null;
+  const from = progress.current;
+  const opened = openNext(progress, from);
+  saveProgress(progress);
+  newState.pick = null;
+  return {
+    title: `«${step.title}» тримається 👍`,
+    sub: 'Перевіримо ще в інший день, як уляглося.' + (opened ? ` А тепер знайомимося: ${lessonNo(progress.current)} «${STEPS[progress.current].title}»` : ''),
+  };
+}
+
 function finish() {
   phase = 'result';
   stopBeat();
   $('grid').querySelectorAll('.count.on').forEach(el => el.classList.remove('on'));
-  // warm-up and the final phrase are judged softly: "more or less" is enough there
-  const r = grade(phrase, hits, stage === 'warmup' || stage === 'finish' ? 'soft' : prefs.strict);
+  // warm-up, the final phrase and calm exercises are judged softly: "more or less" is enough there
+  const soft = stage === 'warmup' || stage === 'finish' || newState?.calm;
+  const r = grade(phrase, hits, soft ? 'soft' : prefs.strict);
   showResult(r);
   const rk = rankOf(phrase, r);
+  const pick = stage === 'new' ? newState.pick : null;
+  const m = recordTake(r, rk);
   const { msg, accepted, summary } = stepHelp(r);
   corgi.mood(rk.rank === 'S' || rk.rank === 'A' ? 'happy' : accepted || summary ? '' : 'cheer');
   showStreak();
-  renderMap();
   if (summary) return;
   showRank(rk);
   const title = $('plate').querySelector('b');
   title.textContent = `${rk.rank} · ${title.textContent === 'Чисто! ✓' ? RANK_SAYS[rk.rank] : title.textContent}`;
   $('plate').insertAdjacentHTML('beforeend', scoreBars(rk));
+  // a skill session talks about that skill
+  if (newState?.skill && stage === 'new' && m) {
+    const line = skillFocus(newState.skill, phrase, r, m);
+    if (line) $('plate').insertAdjacentHTML('beforeend', `<span class="focus">${line}</span>`);
+  }
 
   lastTake = hits.length ? { hits, key: phraseKey() } : null;
   $('replayBtn').disabled = !lastTake;
+  const ready = r.clean ? checkReady(pick) : null;
+  if (ready) setPlate('done', ready.title, ready.sub);
+  // quality sliding after a good start: offer to stop on a good note, once
+  if (stage === 'new' && !tiredAsked && tiring(mainScores)) {
+    tiredAsked = true;
+    later(() => askPad('Схоже, руки втомились', 'Втомлена гра тренує помилки. Закінчимо на легкій фразі?',
+      ['так, легку і все', 'ні, ще пограю'], k => (k === 1 ? finishEasy() : nextPhrase()), 2), NEXT_PAUSE);
+    return;
+  }
   if (accepted) {
-    later(nextPhrase, NEXT_PAUSE + (msg ? 1200 : 0));
+    later(nextPhrase, NEXT_PAUSE + (msg ? 1200 : 0) + (ready ? 2600 : 0));
     return;
   }
   // not this time: stay on the result until the player is ready
@@ -645,6 +866,13 @@ function finish() {
 function goOn() {
   if (phase !== 'hold') return;
   $('nextBtn').hidden = true;
+  nextPhrase();
+}
+
+// stop on a good note: the easy final phrase now
+function finishEasy() {
+  setStage('finish');
+  newState.pick = knownPick(true);
   nextPhrase();
 }
 
@@ -731,11 +959,19 @@ function stepHelp(r) {
     }
     setPlate('done', r.hint, msg || '');
   } else if (stage === 'new') {
-    newState.accepted++;
-    if (pick.kind === 'lesson') { newState.lessonCount++; newState.sinceInsert++; }
-    if (pick.kind === 'insert' && newState.parked > 0) newState.parked--;
-    newState.pick = null;
-    setPlate('done', r.hint, msg || '');
+    const ns = newState;
+    ns.accepted++;
+    let note = msg || '';
+    if (pick.kind === 'lesson' && !pick.prereq) { ns.lessonCount++; ns.sinceInsert++; }
+    if (pick.kind === 'insert' && ns.parked > 0) ns.parked--;
+    if (pick.kind === 'skill') ns.skillIdx++;
+    if (pick.kind === 'calm' && ++ns.calmClean >= CALM_EACH) { ns.calmIdx++; ns.calmClean = 0; }
+    if (pick.prereq && ++ns.prereqClean >= 3) {
+      ns.prereq = null;
+      note = `Освіжили 👍 Тепер «${STEPS[progress.current].title}»`;
+    }
+    ns.pick = null;
+    setPlate('done', r.hint, note);
   } else if (stage === 'finish') {
     showSummary();
     return { msg: null, accepted: false, summary: true };
@@ -745,46 +981,89 @@ function stepHelp(r) {
 
 // ---------- finish ----------
 
+const EVENT_SAYS = {
+  settling: t => `«${t}» тримається. Перевіримо ще в інший день, як уляглося`,
+  mastered: t => `«${t}» засвоєно 🎉`,
+  slipped: t => `«${t}» трохи просіли. Наступного разу освіжимо, це нормально`,
+  recovered: t => `«${t}» знову в формі`,
+};
+const li = items => `<ul>${items.map(x => `<li>${x}</li>`).join('')}</ul>`;
+
+// End of the session, once: mastery moves on the whole session's evidence, the profile remembers it,
+// and a teacher's summary is put together. -> the summary html
+function closeOut() {
+  if (sessionClosed) return summaryHtml;
+  sessionClosed = true;
+  const mins = Math.max(1, Math.round((Date.now() - stats.startMs) / 60000));
+  // an off day only when it stayed off: a good main part after a weak warm-up was just a slow start
+  const typical = metric(profile, 'score', 10);
+  const mainAvg = mainScores.length ? mainScores.reduce((s, v) => s + v, 0) / mainScores.length : null;
+  if (offForm && mainAvg !== null && typical !== null && mainAvg >= typical) offForm = false;
+  const events = closeSession(progress, sessionTakes, { offForm });
+  const report = sessionReport(profile, sessionMetrics);
+  endSession(profile, { day: dayKey(), score: mainAvg, offForm });
+  saveProfile(profile);
+
+  const step = STEPS[progress.current], st = progress.steps[step.id];
+  const moved = progress.current !== stats.startStep || st.t !== stats.startTempo;
+  const ranks = 'SABCD'.split('').filter(k => stats.ranks[k]).map(k => `${k}×${stats.ranks[k]}`).join(' ');
+  const out = [];
+  out.push(`<p>${stats.accepted} фраз зараховано за ${mins} хв` + (ranks ? ` · ранги ${ranks}` : '') +
+    (stats.best >= 2 ? `<br>Найдовша серія: ${stats.best} фраз поспіль вийшли добре` : '') + '</p>');
+  if (skillId) {
+    const after = skillValue(skillId, { progress, profile, now: Date.now() });
+    out.push(`<p><b>Скіл «${SKILLS[skillId].title}»</b>: ${levelWord(skillBefore)}${levelWord(after) !== levelWord(skillBefore) ? ` → ${levelWord(after)}` : ''}. ${skillNote(skillId, { progress, profile, now: Date.now() }).text}</p>`);
+  } else if (!newState?.calm) {
+    out.push(`<p>${lessonNo(progress.current)}: ${step.title}, зараз ${tempoOf(step, st)} BPM${moved ? ' — рух уперед' : ''}</p>`);
+  }
+  const said = events.map(e => EVENT_SAYS[e.type](STEPS.find(s => s.id === e.id).title));
+  if (said.length) out.push(li(said));
+  for (const e of events.filter(x => x.type === 'mastered')) {
+    out.push(`<div class="lesson-report"><b>Звіт: «${STEPS.find(s => s.id === e.id).title}»</b>${li(lessonReport(e.id, progress.steps[e.id]))}</div>`);
+  }
+  if (report.good.length) out.push(`<p class="good"><b>Добре:</b> ${report.good.join('; ')}</p>`);
+  if (report.work.length) out.push(`<p class="work"><b>Наступного разу:</b> ${report.work.join('; ')}</p>`);
+  if (offForm) out.push('<p class="muted">Сьогодні руки були не в формі, це буває. На прогрес цей день майже не вплинув.</p>');
+
+  // what the home screen says next time
+  const work = report.work[0];
+  progress.lastNote = (newState?.calm ? 'спокійні вправи на концентрацію' : `${step.title}, ${tempoOf(step, st)} BPM${moved ? ', рух уперед' : ''}`) +
+    (work ? `. Звернемо увагу: ${work.charAt(0).toLowerCase() + work.slice(1)}.` : '. Сьогодні продовжимо.');
+  saveProgress(progress);
+  summaryHtml = out.join('');
+  return summaryHtml;
+}
+
 function showSummary() {
   clearTimers();
   setStage('done');
   phase = 'idle';
+  stopBeat();
+  const html = closeOut();
   const mins = Math.max(1, Math.round((Date.now() - stats.startMs) / 60000));
-  const step = STEPS[progress.current], st = progress.steps[step.id];
-  const ranks = 'SABCD'.split('').filter(k => stats.ranks[k]).map(k => `${k}×${stats.ranks[k]}`).join(' ');
-  const lines = [
-    `${stats.accepted} фраз зараховано за ${mins} хв` + (ranks ? ` · ранги ${ranks}` : ''),
-    ...(stats.best >= 2 ? [`Найдовша серія: ${stats.best} фраз поспіль вийшли добре`] : []),
-    `${lessonNo(progress.current)}: ${step.title}, зараз ${TEMPOS[st.t]} BPM` +
-      (progress.current !== stats.startStep || st.t !== stats.startTempo ? ' (рух уперед! 🎉)' : ''),
-  ];
-  const bal = handBalance(warmTakes);
-  if (bal) lines.push(`Ліва ≈ ${bal}% від правої за силою удару`);
-  // what the home screen says next time
-  const moved = progress.current !== stats.startStep || st.t !== stats.startTempo;
-  progress.lastNote = `${step.title}, ${TEMPOS[st.t]} BPM` + (moved ? ', рух уперед' : '') +
-    (bal ? `, ліва ≈ ${bal}% правої` : '') + '. Сьогодні продовжимо.';
-  saveProgress(progress);
   $('phraseTitle').textContent = 'Заняття завершено';
   $('bpmPlate').textContent = `${mins} хв`;
   $('phraseSub').textContent = 'Добра робота. Відпочинь: руки запам\'ятовують і між заняттями.';
   corgi.mood('happy');
   $('grid').innerHTML = '';
   $('gridLabel').textContent = '';
-  setPlate('done', 'Підсумок', lines.join('<br>') +
-    '<span class="row"><button id="endBtn" class="cta">Завершити</button><button id="moreBtn" class="cta">Ще трохи</button></span>');
-  $('moreBtn').onclick = () => {
-    setStage('new');
-    newState.goal = newState.accepted + Math.ceil(plan().goal / 2);
-    newState.startMs = Date.now();
-    newState.pick = null;
-    nextPhrase();
-  };
-  $('endBtn').onclick = leaveSession;
-  $('againBtn').disabled = true;
-  $('replayBtn').disabled = true;
-  $('nextBtn').hidden = true;
-  stopBeat();
+  $('summary').innerHTML = html;
+  // hands stay on the pad: 1 tap finishes, 2 taps give five more minutes
+  askPad('Ще 5 хвилин?', 'Дарсі пишається тобою', ['завершуємо', 'ще 5 хвилин'], k => (k === 1 ? leaveSession() : moreMinutes()), 1);
+}
+
+// five more minutes of the same kind of session; they count as a new stretch
+function moreMinutes() {
+  $('summary').innerHTML = '';
+  sessionClosed = false;
+  sessionTakes = {};
+  sessionMetrics = [];
+  mainScores = [];
+  const calm = newState?.calm;
+  setStage('new');
+  newState = calm ? freshNew({ skill: null, calm: true, calmIdx: 0, calmClean: 0, goal: CALM.length * CALM_EACH, minutes: 5 })
+    : freshNew({ goal: Math.ceil(plan().goal / 2) + 2, minutes: 5 });
+  nextPhrase();
 }
 
 // "How you played", on demand: the last take re-sounded with the kit, keeping its timing and
@@ -829,7 +1108,7 @@ $('replayBtn').onclick = () => {
 };
 
 function simulatePlayer() {
-  const gap = noteGap(phrase.bpm);
+  const gap = noteGap(phrase.bpm, divOf(phrase));
   const start = E.ctx.currentTime + 0.8;
   if (help.mode === 'part') demoLearned = true;
   const struggling = DEMO_STRUGGLE && stage === 'new' && !demoLearned;
@@ -869,9 +1148,21 @@ async function start() {
     saveProgress(progress);
     streak = 0;
     stats = { accepted: 0, best: 0, ranks: {}, startMs: Date.now(), startStep: progress.current, startTempo: progress.steps[STEPS[progress.current].id].t };
+    sessionTakes = {};
+    sessionMetrics = [];
+    warmScores = [];
+    mainScores = [];
+    offForm = offFormAsked = tiredAsked = sessionClosed = false;
+    summaryHtml = '';
+    newState = null;
+    skillBefore = skillId ? skillValue(skillId, { progress, profile, now: Date.now() }) : 0;
+    $('summary').innerHTML = '';
+    labelStages();
     later(startCheck, kit ? 300 : 2500);
   } else if (stage === 'check') {
     later(startCheck, 300);
+  } else if (stage === 'done') {
+    later(showSummary, 300);
   } else {
     later(nextPhrase, 300);   // resume: the same phrase again from "listen"
   }
@@ -879,6 +1170,7 @@ async function start() {
 
 function pause() {
   clearTimers();
+  dropAsk();
   stopBeat();
   E.stopMic();
   running = false;
@@ -904,22 +1196,38 @@ async function resume() {
 // back to "today": the session ends here, the next start is a new one
 function leaveSession() {
   clearTimers();
+  dropAsk();
   stopBeat();
   E.stopMic();
+  // leaving mid-session still counts what was played
+  if (sessionStarted && !sessionClosed && sessionMetrics.length) closeOut();
   running = false;
   sessionStarted = false;
+  sessionLen = null;
+  skillId = null;
   phase = 'idle';
   stage = null;
+  $('summary').innerHTML = '';
   document.body.classList.remove('fever');
   renderHome();
   showScreen('home');
 }
 
+// len: null (the default length), 'mini' or 'skill' (with the skill to work on)
+async function startSession(len, skill = null) {
+  if (sessionStarted) return;
+  sessionLen = len;
+  skillId = skill;
+  await resume();
+  if (!sessionStarted) { sessionLen = null; skillId = null; }   // the mic didn't start
+}
+
 $('goBtn').onclick = async () => {
   $('goBtn').disabled = true;
-  await resume();
+  await startSession(null);
   $('goBtn').disabled = false;
 };
+$('miniBtn').onclick = () => startSession('mini');
 $('pauseBtn').onclick = () => (running ? pause() : resume());
 
 $('againBtn').onclick = () => { if (phase === 'wait') listen(); };
@@ -940,14 +1248,19 @@ $('skipBtn').onclick = () => {
     return;
   }
   if (stage === 'finish') { showSummary(); return; }
-  if (newState.pick?.kind === 'insert') {
-    newState.pick = null;
+  const ns = newState, pick = ns.pick;
+  if (pick?.kind !== 'lesson' || pick.prereq) {
+    if (pick?.kind === 'skill') ns.skillIdx++;
+    if (pick?.kind === 'calm') { ns.calmIdx++; ns.calmClean = 0; }
+    if (pick?.prereq) ns.prereq = null;
+    ns.pick = null;
     nextPhrase();
     return;
   }
+  // skipping the current lesson: "I know this one" — it still has to hold in a later session
   const st = progress.steps[STEPS[progress.current].id];
-  st.passed = true;
-  if (progress.current < STEPS.length - 1) progress.current++;
+  if (!st.good.length) st.good = [{ day: 'skip', score: 0.8 }];
+  openNext(progress, progress.current);
   saveProgress(progress);
   renderMap();
   newState.pick = null;
@@ -967,7 +1280,7 @@ for (const [k, v] of Object.entries(STRICTNESS)) strict.add(new Option(v.label, 
 strict.value = prefs.strict;
 strict.onchange = () => { prefs.strict = strict.value; savePrefs(); };
 const lengthSel = $('lengthSelect');
-for (const [k, v] of Object.entries(LENGTHS)) lengthSel.add(new Option(v.label, k));
+for (const k of ['short', 'full']) lengthSel.add(new Option(LENGTHS[k].label, k));
 lengthSel.value = prefs.length;
 lengthSel.onchange = () => { prefs.length = lengthSel.value; savePrefs(); };
 
@@ -995,21 +1308,24 @@ $('leftTopCheck').onchange = () => { prefs.leftTop = $('leftTopCheck').checked; 
 function showScreen(name) {
   document.body.dataset.screen = name;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
-  if (name === 'path') renderMap();
+  if (name === 'path') { renderMap(); focusCloud(); }
 }
 document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => showScreen(b.dataset.go); });
 
 function renderHome() {
   const step = STEPS[progress.current], st = progress.steps[step.id];
   $('homeLesson').textContent = `${lessonNo(progress.current)} · ${step.title}`;
-  $('homeMeta').textContent = `${TEMPOS[st.t]} BPM · розминка, повторення, нове і фініш`;
+  const need = slippedNeed(progress);
+  $('homeMeta').textContent = need >= 0 ? `${tempoOf(step, st)} BPM · спершу освіжимо «${STEPS[need].title}»`
+    : `${tempoOf(step, st)} BPM · розминка, повторення, нове і фініш`;
   $('homeLength').textContent = prefs.length === 'full' ? '20 хв' : '10 хв';
-  // a teacher's note about last time instead of a days-in-a-row counter: no habit pressure
-  $('homeNote').textContent = progress.lastNote ? `Минулого разу: ${progress.lastNote}` : '';
+  // a teacher's note about last time instead of a days-in-a-row counter: no habit pressure;
+  // real progress gets mentioned when there is some
+  const praise = progressNote(profile);
+  $('homeNote').textContent = [progress.lastNote ? `Минулого разу: ${progress.lastNote}` : '', praise].filter(Boolean).join(' ');
 }
 
 const corgi = createCorgi($('corgiPlay'));
 createCorgi($('corgiHome'));
 lengthSel.addEventListener('change', renderHome);
-renderMap();
 renderHome();
